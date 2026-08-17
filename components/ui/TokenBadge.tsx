@@ -1,27 +1,27 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { Colors, Radius, Spacing } from '@/constants/theme';
+import { Colors, Radius, Spacing, Typography } from '@/constants/theme';
 
 interface Props {
   amount: number;
   size?: 'sm' | 'md' | 'lg';
-  showPlus?: boolean;
 }
 
-export function TokenBadge({ amount, size = 'md', showPlus }: Props) {
+export function TokenBadge({ amount, size = 'md' }: Props) {
   const sizes = {
-    sm: { fontSize: 11, padding: 4, paddingH: 8 },
-    md: { fontSize: 14, padding: 6, paddingH: 12 },
-    lg: { fontSize: 20, padding: 10, paddingH: 18 },
+    sm: { padding: 4, fontSize: 11, icon: 12 },
+    md: { padding: 8, fontSize: 14, icon: 16 },
+    lg: { padding: 12, fontSize: 18, icon: 20 },
   };
   const s = sizes[size];
 
   return (
-    <View style={[styles.badge, { paddingVertical: s.padding, paddingHorizontal: s.paddingH }]}>
-      <Text style={styles.icon}>✦</Text>
-      <Text style={[styles.text, { fontSize: s.fontSize }]}>
-        {showPlus ? '+' : ''}{amount.toFixed(2)} MG
+    <View style={[styles.badge, { paddingHorizontal: s.padding + 4, paddingVertical: s.padding }]}>
+      <Text style={{ fontSize: s.icon }}>🌿</Text>
+      <Text style={[styles.amount, { fontSize: s.fontSize }]}>
+        {amount >= 1000 ? `${(amount / 1000).toFixed(1)}K` : amount.toFixed(1)}
       </Text>
+      <Text style={[styles.unit, { fontSize: s.fontSize - 2 }]}>MG</Text>
     </View>
   );
 }
@@ -36,6 +36,6 @@ const styles = StyleSheet.create({
     borderColor: Colors.primary,
     gap: 4,
   },
-  icon: { color: Colors.primary, fontSize: 10 },
-  text: { color: Colors.primary, fontWeight: '700', letterSpacing: 0.5 },
+  amount: { fontWeight: '700', color: Colors.primary },
+  unit: { fontWeight: '600', color: Colors.primaryDark },
 });

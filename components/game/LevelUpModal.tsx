@@ -1,94 +1,103 @@
-import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Modal, Animated, Pressable } from 'react-native';
+import React, { useRef, useEffect } from 'react';
+import { View, Text, StyleSheet, Animated, Pressable } from 'react-native';
 import { Colors, Radius, Spacing, Typography } from '@/constants/theme';
 import { useGame } from '@/hooks/useGame';
 import { LEVEL_REWARDS } from '@/types/game';
 
 export function LevelUpModal() {
   const { levelUpReward, level, dismissLevelUp } = useGame();
+  const visible = levelUpReward !== null;
+
   const scaleAnim = useRef(new Animated.Value(0.5)).current;
-  const opacityAnim = useRef(new Animated.Value(0)).current;
+  const opacAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    if (levelUpReward !== null) {
+    if (visible) {
       Animated.parallel([
-        Animated.spring(scaleAnim, { toValue: 1, friction: 5, useNativeDriver: true }),
-        Animated.timing(opacityAnim, { toValue: 1, duration: 300, useNativeDriver: true }),
+        Animated.spring(scaleAnim, { toValue: 1, friction: 4, tension: 200, useNativeDriver: true }),
+        Animated.timing(opacAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
       ]).start();
-    } else {
-      scaleAnim.setValue(0.5);
-      opacityAnim.setValue(0);
     }
-  }, [levelUpReward]);
+  }, [visible]);
 
-  if (levelUpReward === null) return null;
-
+  if (!visible) return null;
   const reward = LEVEL_REWARDS.find(r => r.level === level);
 
   return (
-    <Modal transparent animationType="none" visible={levelUpReward !== null}>
-      <View style={styles.overlay}>
-        <Animated.View style={[styles.card, { transform: [{ scale: scaleAnim }], opacity: opacityAnim }]}>
-          <Text style={styles.emoji}>🚀</Text>
-          <Text style={styles.title}>LEVEL UP!</Text>
-          <Text style={styles.levelText}>Level {level} — {reward?.title}</Text>
-          <View style={styles.rewardBox}>
-            <Text style={styles.rewardLabel}>REWARD</Text>
-            <Text style={styles.rewardAmount}>+{levelUpReward} MG</Text>
-          </View>
-          <Text style={styles.unlockText}>🔓 Unlocked: {reward?.unlocks}</Text>
-          <Pressable style={styles.btn} onPress={dismissLevelUp}>
-            <Text style={styles.btnText}>Continue Playing</Text>
-          </Pressable>
-        </Animated.View>
-      </View>
-    </Modal>
+    <Animated.View style={[styles.overlay, { opacity: opacAnim }]}>
+      <Animated.View style={[styles.card, { transform: [{ scale: scaleAnim }] }]}>
+        <Text style={styles.emoji}>🎉</Text>
+        <Text style={styles.levelBadge}>LEVEL {level}</Text>
+        <Text style={styles.title}>{reward?.title ?? 'Legend'}</Text>
+        <Text style={styles.subtitle}>{reward?.unlocks}</Text>
+
+        <View style={styles.rewardBox}>
+          <Text style={styles.rewardEmoji}>🌿</Text>
+          <Text style={styles.rewardAmt}>+{levelUpReward} MG</Text>
+          <Text style={styles.rewardLbl}>Airdrop Reward</Text>
+        </View>
+
+        <Pressable style={styles.btn} onPress={dismissLevelUp}>
+          <Text style={styles.btnText}>Continue Playing!</Text>
+        </Pressable>
+      </Animated.View>
+    </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
   overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.85)',
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,30,15,0.7)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: Spacing.lg,
+    zIndex: 99,
   },
   card: {
     backgroundColor: Colors.bgCard,
     borderRadius: Radius.xl,
     padding: Spacing.xl,
     alignItems: 'center',
+    width: '85%',
+    maxWidth: 320,
     borderWidth: 2,
     borderColor: Colors.primary,
-    width: '90%',
-    maxWidth: 340,
-    shadowColor: Colors.primary,
-    shadowOpacity: 0.5,
-    shadowRadius: 20,
-    elevation: 20,
   },
   emoji: { fontSize: 48, marginBottom: Spacing.sm },
-  title: { ...Typography.h1, color: Colors.primary, letterSpacing: 3, marginBottom: 4 },
-  levelText: { ...Typography.body, color: Colors.textSecondary, marginBottom: Spacing.md },
+  levelBadge: {
+    backgroundColor: Colors.primary,
+    color: '#fff',
+    fontWeight: '800',
+    fontSize: 12,
+    letterSpacing: 3,
+    paddingVertical: 4,
+    paddingHorizontal: 14,
+    borderRadius: Radius.full,
+    marginBottom: Spacing.sm,
+    overflow: 'hidden',
+  },
+  title: { ...Typography.h2, color: Colors.textPrimary, marginBottom: 4, textAlign: 'center' },
+  subtitle: { ...Typography.small, color: Colors.textMuted, marginBottom: Spacing.md },
   rewardBox: {
-    backgroundColor: Colors.primaryGlow,
-    borderRadius: Radius.md,
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.xl,
+    backgroundColor: Colors.bgSurface,
+    borderRadius: Radius.lg,
+    padding: Spacing.md,
     alignItems: 'center',
+    width: '100%',
     marginBottom: Spacing.md,
     borderWidth: 1,
-    borderColor: Colors.primary,
+    borderColor: Colors.borderStrong,
   },
-  rewardLabel: { ...Typography.caption, color: Colors.primary, textTransform: 'uppercase' },
-  rewardAmount: { fontSize: 28, fontWeight: '800', color: Colors.primary },
-  unlockText: { ...Typography.small, color: Colors.textSecondary, marginBottom: Spacing.lg, textAlign: 'center' },
+  rewardEmoji: { fontSize: 28 },
+  rewardAmt: { fontSize: 32, fontWeight: '900', color: Colors.primary },
+  rewardLbl: { ...Typography.caption, color: Colors.textMuted },
   btn: {
     backgroundColor: Colors.primary,
     borderRadius: Radius.full,
-    paddingVertical: Spacing.sm + 4,
-    paddingHorizontal: Spacing.xl,
+    paddingVertical: 14,
+    width: '100%',
+    alignItems: 'center',
   },
-  btnText: { ...Typography.bodyBold, color: Colors.bg },
+  btnText: { ...Typography.bodyBold, color: '#fff' },
 });

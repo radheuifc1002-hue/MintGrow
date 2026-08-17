@@ -1,63 +1,40 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { Colors, Radius, Typography, Spacing } from '@/constants/theme';
+import { Colors, Radius, Spacing, Typography } from '@/constants/theme';
 
 interface Props {
   label: string;
-  value: string | number;
+  value: string;
   accent?: boolean;
-  small?: boolean;
 }
 
-export function ScoreCard({ label, value, accent, small }: Props) {
+export function ScoreCard({ label, value, accent }: Props) {
   return (
-    <View style={[styles.card, accent && styles.accentCard, small && styles.smallCard]}>
-      <Text style={[styles.label, small && styles.smallLabel]}>{label}</Text>
-      <Text style={[styles.value, accent && styles.accentValue, small && styles.smallValue]}>
-        {value}
-      </Text>
+    <View style={[styles.card, accent && styles.accentCard]}>
+      <Text style={[styles.value, accent && styles.accentValue]}>{value}</Text>
+      <Text style={styles.label}>{label}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: Colors.bgSurface,
+    flex: 1,
+    backgroundColor: Colors.bgCard,
     borderRadius: Radius.md,
     paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.md,
+    paddingHorizontal: Spacing.xs,
     alignItems: 'center',
-    minWidth: 80,
     borderWidth: 1,
     borderColor: Colors.border,
+    minHeight: 52,
+    justifyContent: 'center',
   },
   accentCard: {
-    backgroundColor: Colors.primaryGlow,
     borderColor: Colors.primary,
+    backgroundColor: Colors.primaryGlow,
   },
-  smallCard: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    minWidth: 60,
-  },
-  label: {
-    ...Typography.caption,
-    color: Colors.textMuted,
-    textTransform: 'uppercase',
-    marginBottom: 2,
-  },
-  smallLabel: {
-    fontSize: 9,
-  },
-  value: {
-    ...Typography.bodyBold,
-    color: Colors.textPrimary,
-    fontSize: 18,
-  },
-  accentValue: {
-    color: Colors.primary,
-  },
-  smallValue: {
-    fontSize: 14,
-  },
+  value: { ...Typography.bodyBold, color: Colors.textPrimary, fontSize: 15 },
+  accentValue: { color: Colors.primary },
+  label: { ...Typography.caption, color: Colors.textMuted, marginTop: 1 },
 });

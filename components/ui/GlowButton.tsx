@@ -27,10 +27,10 @@ export function GlowButton({ label, onPress, variant = 'primary', disabled, load
     accent: Colors.accent,
   };
   const textColorMap = {
-    primary: Colors.bg,
+    primary: '#fff',
     secondary: Colors.textSecondary,
     danger: '#fff',
-    accent: Colors.bg,
+    accent: '#fff',
   };
 
   return (

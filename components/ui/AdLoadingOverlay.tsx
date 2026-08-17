@@ -1,36 +1,24 @@
-import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Modal, Animated } from 'react-native';
+import React from 'react';
+import { View, Text, StyleSheet, Modal, ActivityIndicator } from 'react-native';
 import { Colors, Radius, Spacing, Typography } from '@/constants/theme';
 
 interface Props {
   visible: boolean;
+  message?: string;
 }
 
-export function AdLoadingOverlay({ visible }: Props) {
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    if (visible) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 1.2, duration: 700, useNativeDriver: true }),
-          Animated.timing(pulseAnim, { toValue: 1, duration: 700, useNativeDriver: true }),
-        ])
-      ).start();
-    }
-  }, [visible]);
-
+export function AdLoadingOverlay({ visible, message = 'Loading your reward...' }: Props) {
   return (
-    <Modal transparent visible={visible} animationType="fade">
+    <Modal visible={visible} transparent animationType="fade">
       <View style={styles.overlay}>
         <View style={styles.card}>
-          <Animated.Text style={[styles.icon, { transform: [{ scale: pulseAnim }] }]}>📺</Animated.Text>
-          <Text style={styles.title}>Loading Ad...</Text>
-          <Text style={styles.subtitle}>Please watch the full ad{'\n'}to unlock your withdrawal</Text>
-          <View style={styles.bar}>
-            <Animated.View style={[styles.barFill, { width: '70%' }]} />
+          <Text style={styles.emoji}>📺</Text>
+          <ActivityIndicator size="large" color={Colors.primary} style={styles.spinner} />
+          <Text style={styles.title}>Watch & Earn</Text>
+          <Text style={styles.msg}>{message}</Text>
+          <View style={styles.pill}>
+            <Text style={styles.pillText}>Powered by Monetag</Text>
           </View>
-          <Text style={styles.note}>🔒 Withdrawal unlocks after ad completes</Text>
         </View>
       </View>
     </Modal>
@@ -40,35 +28,30 @@ export function AdLoadingOverlay({ visible }: Props) {
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.9)',
+    backgroundColor: 'rgba(0,0,0,0.7)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: Spacing.lg,
   },
   card: {
     backgroundColor: Colors.bgCard,
     borderRadius: Radius.xl,
     padding: Spacing.xl,
     alignItems: 'center',
-    width: '88%',
+    width: 280,
     borderWidth: 2,
-    borderColor: Colors.accent,
+    borderColor: Colors.primary,
   },
-  icon: { fontSize: 52, marginBottom: Spacing.md },
-  title: { ...Typography.h2, color: Colors.textPrimary, marginBottom: 6 },
-  subtitle: { ...Typography.body, color: Colors.textSecondary, textAlign: 'center', marginBottom: Spacing.lg, lineHeight: 22 },
-  bar: {
-    width: '100%',
-    height: 6,
+  emoji: { fontSize: 40, marginBottom: Spacing.sm },
+  spinner: { marginBottom: Spacing.md },
+  title: { ...Typography.h3, color: Colors.textPrimary, marginBottom: 4 },
+  msg: { ...Typography.small, color: Colors.textMuted, textAlign: 'center', marginBottom: Spacing.md },
+  pill: {
     backgroundColor: Colors.bgSurface,
     borderRadius: Radius.full,
-    marginBottom: Spacing.md,
-    overflow: 'hidden',
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
-  barFill: {
-    height: '100%',
-    backgroundColor: Colors.accent,
-    borderRadius: Radius.full,
-  },
-  note: { ...Typography.small, color: Colors.textMuted, textAlign: 'center' },
+  pillText: { ...Typography.caption, color: Colors.textMuted },
 });

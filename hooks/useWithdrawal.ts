@@ -1,8 +1,10 @@
 import { useState, useCallback } from 'react';
-import { getWithdrawals, saveWithdrawal, updateWithdrawal, getProfile, saveProfile, incrementAdsWatched } from '@/services/storage';
+import {
+  getWithdrawals, saveWithdrawal, updateWithdrawal,
+  getProfile, saveProfile, incrementAdsWatched,
+} from '@/services/storage';
 import { showRewardedAd } from '@/services/monetag';
-import { WithdrawalRequest } from '@/types/game';
-import { WITHDRAWAL_MIN } from '@/types/game';
+import { WithdrawalRequest, WITHDRAWAL_MIN, TOKEN_NETWORK } from '@/types/game';
 
 export function useWithdrawal() {
   const [withdrawals, setWithdrawals] = useState<WithdrawalRequest[]>([]);
@@ -17,17 +19,20 @@ export function useWithdrawal() {
 
   const requestWithdrawal = useCallback(async (amount: number): Promise<boolean> => {
     setError(null);
-
     const profile = await getProfile();
     if (!profile) { setError('Profile not found'); return false; }
-    if (!profile.walletAddress) { setError('Please set your wallet address first'); return false; }
+    if (!profile.walletAddress) { setError('Please set your BEP-20 wallet address first'); return false; }
     if (profile.totalTokens < WITHDRAWAL_MIN) {
-      setError(`Minimum withdrawal is ${WITHDRAWAL_MIN} MG tokens`);
+      setError(`Minimum withdrawal is ${WITHDRAWAL_MIN.toLocaleString()} MG tokens`);
       return false;
     }
     if (amount > profile.totalTokens) { setError('Insufficient token balance'); return false; }
+    if (amount < WITHDRAWAL_MIN) {
+      setError(`Minimum withdrawal is ${WITHDRAWAL_MIN.toLocaleString()} MG`);
+      return false;
+    }
 
-    // Show rewarded ad before withdrawal
+    // Ad gate
     setIsWatchingAd(true);
     try {
       const adResult = await showRewardedAd();
@@ -48,11 +53,11 @@ export function useWithdrawal() {
         username: profile.username,
         amount,
         walletAddress: profile.walletAddress,
+        network: TOKEN_NETWORK,
         status: 'pending',
         createdAt: new Date().toISOString(),
       };
 
-      // Deduct pending tokens
       profile.totalTokens = Math.round((profile.totalTokens - amount) * 100) / 100;
       profile.pendingTokens = Math.round((profile.pendingTokens + amount) * 100) / 100;
       await saveProfile(profile);
@@ -61,8 +66,8 @@ export function useWithdrawal() {
       const list = await getWithdrawals();
       setWithdrawals(list);
       return true;
-    } catch (e) {
-      setError('Failed to submit withdrawal. Please try again.');
+    } catch {
+      setError('Failed to submit. Please try again.');
       return false;
     } finally {
       setIsLoading(false);
@@ -78,13 +83,7 @@ export function useWithdrawal() {
   }, []);
 
   return {
-    withdrawals,
-    isLoading,
-    isWatchingAd,
-    error,
-    loadWithdrawals,
-    requestWithdrawal,
-    updateWallet,
-    setError,
+    withdrawals, isLoading, isWatchingAd, error,
+    loadWithdrawals, requestWithdrawal, updateWallet, setError,
   };
 }

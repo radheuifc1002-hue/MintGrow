@@ -8,12 +8,12 @@ export default function TabLayout() {
   const insets = useSafeAreaInsets();
 
   const tabBarStyle = {
-    height: Platform.select({ ios: insets.bottom + 62, android: insets.bottom + 62, default: 70 }),
-    paddingTop: 8,
-    paddingBottom: Platform.select({ ios: insets.bottom + 8, android: insets.bottom + 8, default: 8 }),
-    paddingHorizontal: 8,
-    backgroundColor: Colors.bgCard,
-    borderTopWidth: 1,
+    height: Platform.select({ ios: insets.bottom + 58, android: insets.bottom + 58, default: 66 }),
+    paddingTop: 6,
+    paddingBottom: Platform.select({ ios: insets.bottom + 6, android: insets.bottom + 6, default: 6 }),
+    paddingHorizontal: 4,
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1.5,
     borderTopColor: Colors.border,
   };
 
@@ -24,7 +24,7 @@ export default function TabLayout() {
         tabBarStyle,
         tabBarActiveTintColor: Colors.primary,
         tabBarInactiveTintColor: Colors.textMuted,
-        tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
+        tabBarLabelStyle: { fontSize: 10, fontWeight: '600' },
       }}
     >
       <Tabs.Screen
@@ -39,6 +39,13 @@ export default function TabLayout() {
         options={{
           title: 'Rewards',
           tabBarIcon: ({ color, size }) => <MaterialIcons name="account-balance-wallet" size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="referral"
+        options={{
+          title: 'Referral',
+          tabBarIcon: ({ color, size }) => <MaterialIcons name="group-add" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
