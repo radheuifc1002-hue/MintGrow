@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput,
   KeyboardAvoidingView, Platform, Alert, Pressable,
@@ -11,7 +11,8 @@ import { GlowButton } from '@/components/ui/GlowButton';
 import { AdLoadingOverlay } from '@/components/ui/AdLoadingOverlay';
 import { Colors, Spacing, Radius, Typography } from '@/constants/theme';
 import { WITHDRAWAL_MIN, TOKEN_NETWORK } from '@/types/game';
-import { getProfile, saveProfile } from '@/services/storage';
+import { getProfile, subscribeWithdrawalUpdates } from '@/services/storage';
+import { WithdrawalRequest } from '@/types/game';
 
 export default function RewardsScreen() {
   const insets = useSafeAreaInsets();
@@ -25,7 +26,26 @@ export default function RewardsScreen() {
   const [withdrawAmount, setWithdrawAmount] = useState('');
   const [savedWallet, setSavedWallet] = useState(false);
 
-  useEffect(() => { loadWithdrawals(); }, []);
+  useEffect(() => {
+    loadWithdrawals();
+  }, []);
+
+  // Real-time subscription for withdrawal status updates
+  useEffect(() => {
+    if (!profile?.telegramId) return;
+    const unsubscribe = subscribeWithdrawalUpdates(profile.telegramId, (updated: WithdrawalRequest) => {
+      loadWithdrawals();
+      if (updated.status === 'approved') {
+        refreshProfile();
+        Alert.alert('Withdrawal Approved! 🎉', `${updated.amount.toLocaleString()} MG has been sent to your BNB Chain wallet.`);
+      } else if (updated.status === 'rejected') {
+        refreshProfile();
+        Alert.alert('Withdrawal Rejected', 'Your tokens have been refunded to your balance.');
+      }
+    });
+    return unsubscribe;
+  }, [profile?.telegramId]);
+
   useEffect(() => {
     if (profile?.walletAddress) setWalletInput(profile.walletAddress);
   }, [profile?.walletAddress]);
@@ -52,12 +72,14 @@ export default function RewardsScreen() {
       setWithdrawAmount('');
       refreshProfile();
       loadWithdrawals();
-      Alert.alert('Submitted!', 'Withdrawal request submitted. Admin will approve within 24-48h on BNB Chain.');
+      Alert.alert('Submitted! 🚀', 'Withdrawal request submitted. Admin will approve within 24–48h on BNB Chain.');
     }
   };
 
   const statusColor = (s: string) => ({
-    pending: Colors.warning, approved: Colors.success, rejected: Colors.error,
+    pending: Colors.warning,
+    approved: Colors.success,
+    rejected: Colors.error,
   }[s] || Colors.textMuted);
 
   const totalTokens = profile?.totalTokens ?? 0;
@@ -81,7 +103,6 @@ export default function RewardsScreen() {
               {totalTokens >= 1000 ? `${(totalTokens / 1000).toFixed(2)}K` : totalTokens.toFixed(2)}
             </Text>
             <Text style={styles.balanceSub}>MintGrow Tokens</Text>
-
             <View style={styles.statsGrid}>
               <View style={styles.statBox}>
                 <Text style={styles.statVal}>{(profile?.pendingTokens ?? 0).toFixed(0)}</Text>
@@ -110,7 +131,7 @@ export default function RewardsScreen() {
               <View style={styles.progressBar}>
                 <View style={[styles.progressFill, { width: `${Math.min((totalTokens / WITHDRAWAL_MIN) * 100, 100)}%` }]} />
               </View>
-              <Text style={styles.progressNote}>{(WITHDRAWAL_MIN - totalTokens).toFixed(0)} MG more to unlock withdrawal</Text>
+              <Text style={styles.progressNote}>{(WITHDRAWAL_MIN - totalTokens).toLocaleString(undefined, { maximumFractionDigits: 0 })} MG more to unlock withdrawal</Text>
             </View>
           )}
 
@@ -145,7 +166,7 @@ export default function RewardsScreen() {
             </View>
             {profile?.walletAddress ? (
               <Text style={styles.walletSet}>
-                {profile.walletAddress.slice(0, 8)}...{profile.walletAddress.slice(-6)}
+                ✓ {profile.walletAddress.slice(0, 8)}...{profile.walletAddress.slice(-6)}
               </Text>
             ) : null}
           </View>
@@ -188,7 +209,7 @@ export default function RewardsScreen() {
               style={{ marginBottom: Spacing.sm }}
             />
             <Text style={styles.withdrawNote}>
-              Approved within 24–48 hours · BNB Chain (BEP-20)
+              Approved within 24–48 hours · BNB Chain (BEP-20) · Status updates in real-time
             </Text>
           </View>
 
@@ -206,8 +227,10 @@ export default function RewardsScreen() {
                   <View style={styles.wLeft}>
                     <Text style={styles.wAmount}>{w.amount.toLocaleString()} MG</Text>
                     <Text style={styles.wDate}>{new Date(w.createdAt).toLocaleDateString()}</Text>
-                    <Text style={styles.wWallet}>{w.walletAddress.slice(0, 8)}...{w.walletAddress.slice(-5)}</Text>
-                    {w.txHash && <Text style={styles.wTx}>TX: {w.txHash.slice(0, 16)}...</Text>}
+                    <Text style={styles.wWallet}>
+                      {w.walletAddress.slice(0, 8)}...{w.walletAddress.slice(-5)}
+                    </Text>
+                    {w.txHash ? <Text style={styles.wTx}>TX: {w.txHash.slice(0, 16)}...</Text> : null}
                   </View>
                   <View style={[styles.statusBadge, { borderColor: statusColor(w.status) }]}>
                     <Text style={[styles.statusText, { color: statusColor(w.status) }]}>
@@ -231,15 +254,10 @@ const styles = StyleSheet.create({
   scroll: { padding: Spacing.md, paddingBottom: 40 },
   pageTitle: { ...Typography.h2, color: Colors.textPrimary, marginBottom: 2 },
   pageSubtitle: { ...Typography.small, color: Colors.textMuted, marginBottom: Spacing.md },
-
   balanceCard: {
-    backgroundColor: Colors.bgCard,
-    borderRadius: Radius.xl,
-    padding: Spacing.lg,
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: Colors.primary,
-    marginBottom: Spacing.sm,
+    backgroundColor: Colors.bgCard, borderRadius: Radius.xl, padding: Spacing.lg,
+    alignItems: 'center', borderWidth: 2, borderColor: Colors.primary, marginBottom: Spacing.sm,
+    shadowColor: Colors.primary, shadowOpacity: 0.12, shadowRadius: 12, elevation: 4,
   },
   balanceTop: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 4 },
   balanceLabel: { ...Typography.caption, color: Colors.primary, letterSpacing: 1.5, textTransform: 'uppercase' },
@@ -254,7 +272,6 @@ const styles = StyleSheet.create({
   statDivider: { width: 1, backgroundColor: Colors.border },
   statVal: { ...Typography.bodyBold, color: Colors.textPrimary, fontSize: 15 },
   statLbl: { ...Typography.caption, color: Colors.textMuted },
-
   progressCard: {
     backgroundColor: Colors.bgCard, borderRadius: Radius.md, padding: Spacing.md,
     marginBottom: Spacing.sm, borderWidth: 1, borderColor: Colors.border,
@@ -265,14 +282,12 @@ const styles = StyleSheet.create({
   progressBar: { height: 8, backgroundColor: Colors.bgSurface, borderRadius: 4, overflow: 'hidden', marginBottom: 6, borderWidth: 1, borderColor: Colors.border },
   progressFill: { height: '100%', backgroundColor: Colors.primary, borderRadius: 4 },
   progressNote: { ...Typography.caption, color: Colors.textMuted },
-
   minNotice: {
     flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: Spacing.md,
     backgroundColor: Colors.primaryGlow, borderRadius: Radius.sm, padding: Spacing.sm,
     borderWidth: 1, borderColor: Colors.borderStrong,
   },
   minText: { ...Typography.small, color: Colors.primary, flex: 1 },
-
   section: {
     backgroundColor: Colors.bgCard, borderRadius: Radius.lg, padding: Spacing.md,
     marginBottom: Spacing.md, borderWidth: 1, borderColor: Colors.border,
@@ -286,7 +301,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12, color: Colors.textPrimary, fontSize: 14, minHeight: 48,
   },
   saveBtn: { paddingHorizontal: Spacing.md, minHeight: 48 },
-  walletSet: { ...Typography.small, color: Colors.success },
+  walletSet: { ...Typography.small, color: Colors.success, fontWeight: '600' },
   maxBtn: {
     backgroundColor: Colors.bgSurface, borderRadius: Radius.md, borderWidth: 1,
     borderColor: Colors.primary, paddingHorizontal: Spacing.sm, paddingVertical: 12,

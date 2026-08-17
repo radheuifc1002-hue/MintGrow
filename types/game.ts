@@ -17,8 +17,8 @@ export interface PowerUp {
   label: string;
   emoji: string;
   description: string;
-  adRequired: boolean;   // earn via ad
-  tokenCost: number;     // or spend tokens
+  adRequired: boolean;
+  tokenCost: number;
 }
 
 export interface GameState {
@@ -35,6 +35,7 @@ export interface GameState {
 export interface PlayerProfile {
   telegramId: string;
   username: string;
+  avatarUrl?: string;
   referralCode: string;
   referredBy?: string;
   referralCount: number;
@@ -49,7 +50,8 @@ export interface PlayerProfile {
   adsWatched: number;
   lastLoginDate?: string;
   loginStreak: number;
-  powerUps: Record<PowerUpType, number>; // count of each owned power-up
+  powerUps: Record<PowerUpType, number>;
+  isRegistered?: boolean;
 }
 
 export interface WithdrawalRequest {
@@ -70,6 +72,8 @@ export interface ReferralEntry {
   username: string;
   joinedAt: string;
   tokensEarned: number;
+  level?: number;
+  refereeBalance?: number;
 }
 
 export interface LevelReward {
@@ -78,6 +82,29 @@ export interface LevelReward {
   title: string;
   unlocks: string;
 }
+
+// ─── Referral Income Structure (25 levels) ──────────────────────────────────
+// Level 1: 20%, needs 2 direct refs to earn
+// Level 2: 15%, needs 2 direct
+// Level 3: 10%, needs 3 direct
+// Level 4: 5%,  needs 4 direct
+// Level 5: 5%,  needs 5 direct
+// Level 6-25: 3%, needs 6 direct each
+export const REFERRAL_LEVELS: { level: number; pct: number; directRequired: number }[] = [
+  { level: 1,  pct: 0.20, directRequired: 2 },
+  { level: 2,  pct: 0.15, directRequired: 2 },
+  { level: 3,  pct: 0.10, directRequired: 3 },
+  { level: 4,  pct: 0.05, directRequired: 4 },
+  { level: 5,  pct: 0.05, directRequired: 5 },
+  ...Array.from({ length: 20 }, (_, i) => ({ level: i + 6, pct: 0.03, directRequired: 6 })),
+];
+
+export const getEligibleReferralPct = (level: number, directRefs: number): number => {
+  const rule = REFERRAL_LEVELS.find(r => r.level === level);
+  if (!rule) return 0;
+  if (directRefs < rule.directRequired) return 0;
+  return rule.pct;
+};
 
 export const POWER_UPS: PowerUp[] = [
   { type: 'undo',           label: 'Undo Move',       emoji: '↩️',  description: 'Reverse your last move',          adRequired: true,  tokenCost: 500 },
@@ -99,9 +126,9 @@ export const LEVEL_REWARDS: LevelReward[] = [
 
 export const SCORE_PER_LEVEL = [0, 500, 1500, 3500, 7500, 15000, 30000, 60000, 120000];
 export const TOKENS_PER_MERGE_BASE = 0.5;
-export const WITHDRAWAL_MIN = 10000;           // 10k MG minimum
-export const REFERRAL_BONUS_TOKENS = 500;      // per referral sign-up
-export const REFERRAL_INCOME_PCT = 0.20;       // 20% of referral's earnings (first level)
+export const WITHDRAWAL_MIN = 250000;           // 250k MG minimum withdrawal
+export const REFERRAL_BONUS_TOKENS = 500;       // per referral sign-up
+export const REFERRAL_INCOME_PCT = 0.20;        // level-1 base (20%)
 export const ADMIN_TELEGRAM_ID = 'PETER44441111';
 export const TOKEN_NETWORK = 'BNB Chain (BEP-20)';
 

@@ -4,11 +4,31 @@ import {
   calculateTokensEarned, getLevelFromScore, destroyTile, clearAllBlockers,
 } from '@/services/gameEngine';
 import {
-  getProfile, saveProfile, updateProfileTokens, createDefaultProfile,
+  getProfile, saveProfile, updateProfileTokens, initOrLoadProfile,
   usePowerUp as consumePowerUp,
   saveBoardState, getSavedBoard, clearSavedBoard,
 } from '@/services/storage';
 import { Tile, PlayerProfile, LEVEL_REWARDS, PowerUpType } from '@/types/game';
+
+interface TelegramUser {
+  id: number;
+  first_name: string;
+  last_name?: string;
+  username?: string;
+  photo_url?: string;
+}
+
+declare global {
+  interface Window {
+    Telegram?: {
+      WebApp?: {
+        initDataUnsafe?: { user?: TelegramUser };
+        ready?: () => void;
+        expand?: () => void;
+      };
+    };
+  }
+}
 
 interface GameContextType {
   board: (Tile | null)[][];
@@ -58,23 +78,57 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const scoreRef = useRef(0);
   const movesRef = useRef(0);
   const boardRef = useRef(board);
-
-  // ─── Undo history (last 3 states) ───────────────────────────────────────────
   const undoStack = useRef<Array<{ board: (Tile | null)[][]; score: number; moves: number }>>([]);
 
   const pushUndo = (b: (Tile | null)[][], s: number, m: number) => {
     undoStack.current = [...undoStack.current.slice(-2), { board: b.map(r => [...r]), score: s, moves: m }];
   };
 
-  useEffect(() => { loadProfile(); checkSavedBoard(); }, []);
+  useEffect(() => {
+    loadProfile();
+    checkSavedBoard();
+  }, []);
+
+  const detectTelegramUser = (): { id: string; username: string; avatar?: string } | null => {
+    try {
+      if (typeof window !== 'undefined' && window.Telegram?.WebApp) {
+        const tg = window.Telegram.WebApp;
+        tg.ready?.();
+        tg.expand?.();
+        const user = tg.initDataUnsafe?.user;
+        if (user) {
+          return {
+            id: String(user.id),
+            username: user.username || user.first_name || `User${user.id}`,
+            avatar: user.photo_url,
+          };
+        }
+      }
+    } catch {}
+    return null;
+  };
 
   const loadProfile = async () => {
-    let p = await getProfile();
-    if (!p) {
-      const tgId = `tg_${Math.floor(Math.random() * 9000000 + 1000000)}`;
-      p = createDefaultProfile(tgId, 'CryptoPlayer');
-      await saveProfile(p);
+    const tgUser = detectTelegramUser();
+    let p: PlayerProfile | null = null;
+
+    if (tgUser) {
+      // Use real Telegram identity
+      p = await initOrLoadProfile(tgUser.id, tgUser.username, tgUser.avatar);
+      if (tgUser.avatar && p.avatarUrl !== tgUser.avatar) {
+        p.avatarUrl = tgUser.avatar;
+        await saveProfile(p);
+      }
+    } else {
+      p = await getProfile();
+      if (!p) {
+        const tgId = `tg_${Math.floor(Math.random() * 9000000 + 1000000)}`;
+        const { createDefaultProfile } = await import('@/services/storage');
+        p = createDefaultProfile(tgId, 'CryptoPlayer');
+        await saveProfile(p);
+      }
     }
+
     setProfileState(p);
     setBestScore(p.bestScore);
   };
@@ -96,9 +150,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       const { board: moved, score: gained, moved: didMove, newTierValue: ntv } = moveBoard(prev, dir);
       if (!didMove) return prev;
 
-      // Save state for undo before applying
       pushUndo(prev, scoreRef.current, movesRef.current);
-
       if (ntv && ntv > 2) setNewTierValue(ntv);
 
       setScore(s => {
@@ -168,20 +220,34 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const continueGame = useCallback(() => setIsWon(false), []);
 
   const continueFromSaved = useCallback(async () => {
-    const saved = await getSavedBoard();
-    if (!saved) { newGame(); return; }
-    setBoard(saved.board);
-    boardRef.current = saved.board;
-    setScore(saved.score || 0);
-    scoreRef.current = saved.score || 0;
-    setMoves(saved.moves || 0);
-    movesRef.current = saved.moves || 0;
-    setIsGameOver(false);
-    setIsWon(false);
-    setLevel(getLevelFromScore(saved.score || 0));
-    undoStack.current = [];
-    clearSavedBoard();
-    setCanContinue(false);
+    try {
+      const saved = await getSavedBoard();
+      if (!saved) {
+        newGame();
+        return;
+      }
+      // Clear game over state FIRST, then restore board
+      setIsGameOver(false);
+      setIsWon(false);
+      setCanContinue(false);
+
+      const restoredBoard = saved.board as (Tile | null)[][];
+      const restoredScore = saved.score || 0;
+      const restoredMoves = saved.moves || 0;
+
+      setBoard(restoredBoard);
+      boardRef.current = restoredBoard;
+      setScore(restoredScore);
+      scoreRef.current = restoredScore;
+      setMoves(restoredMoves);
+      movesRef.current = restoredMoves;
+      setLevel(getLevelFromScore(restoredScore));
+      undoStack.current = [];
+
+      await clearSavedBoard();
+    } catch {
+      newGame();
+    }
   }, [newGame]);
 
   const dismissLevelUp = useCallback(() => setLevelUpReward(null), []);
@@ -192,7 +258,6 @@ export function GameProvider({ children }: { children: ReactNode }) {
     saveProfile(p);
   }, []);
 
-  // ─── Power-Ups ──────────────────────────────────────────────────────────────
   const activatePowerUp = useCallback(async (type: PowerUpType): Promise<boolean> => {
     const p = await getProfile();
     if (!p) return false;
@@ -205,7 +270,6 @@ export function GameProvider({ children }: { children: ReactNode }) {
       const updated = await consumePowerUp('undo');
       if (!updated) return false;
       setProfileState(updated);
-      // Restore previous board state
       setBoard(prev.board);
       boardRef.current = prev.board;
       setScore(prev.score);
@@ -218,7 +282,6 @@ export function GameProvider({ children }: { children: ReactNode }) {
     }
 
     if (type === 'destroy') {
-      // consume happens in selectTileToDestroy after user picks a tile
       setIsSelectingDestroy(true);
       return true;
     }
@@ -240,12 +303,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
       if (!updated) return false;
       setProfileState(updated);
       setBoard(prev => {
-        // Collect all non-null tiles, shuffle positions
         const tiles: Tile[] = [];
         for (let r = 0; r < 4; r++)
           for (let c = 0; c < 4; c++)
             if (prev[r][c]) tiles.push(prev[r][c]!);
-        // Fisher-Yates shuffle
         for (let i = tiles.length - 1; i > 0; i--) {
           const j = Math.floor(Math.random() * (i + 1));
           [tiles[i], tiles[j]] = [tiles[j], tiles[i]];

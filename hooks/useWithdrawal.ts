@@ -13,7 +13,9 @@ export function useWithdrawal() {
   const [error, setError] = useState<string | null>(null);
 
   const loadWithdrawals = useCallback(async () => {
-    const list = await getWithdrawals();
+    const profile = await getProfile();
+    if (!profile) return;
+    const list = await getWithdrawals(profile.telegramId);
     setWithdrawals(list);
   }, []);
 
@@ -63,7 +65,7 @@ export function useWithdrawal() {
       await saveProfile(profile);
       await saveWithdrawal(req);
 
-      const list = await getWithdrawals();
+      const list = await getWithdrawals(profile.telegramId);
       setWithdrawals(list);
       return true;
     } catch {

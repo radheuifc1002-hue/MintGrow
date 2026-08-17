@@ -8,8 +8,11 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useGame } from '@/hooks/useGame';
 import { GlowButton } from '@/components/ui/GlowButton';
 import { Colors, Spacing, Radius, Typography } from '@/constants/theme';
-import { REFERRAL_BONUS_TOKENS, REFERRAL_INCOME_PCT, TOKEN_NETWORK } from '@/types/game';
-import { getReferrals, applyReferralCode, getProfile, saveProfile, addReferral, generateReferralCode } from '@/services/storage';
+import {
+  REFERRAL_BONUS_TOKENS, TOKEN_NETWORK, WITHDRAWAL_MIN,
+  REFERRAL_LEVELS, getEligibleReferralPct,
+} from '@/types/game';
+import { getReferrals, applyReferralCode } from '@/services/storage';
 import { ReferralEntry } from '@/types/game';
 
 export default function ReferralScreen() {
@@ -19,13 +22,13 @@ export default function ReferralScreen() {
   const [referrals, setReferrals] = useState<ReferralEntry[]>([]);
   const [codeInput, setCodeInput] = useState('');
   const [applying, setApplying] = useState(false);
+  const [showLevels, setShowLevels] = useState(false);
 
-  useEffect(() => {
-    loadReferrals();
-  }, []);
+  useEffect(() => { loadReferrals(); }, [profile?.telegramId]);
 
   const loadReferrals = async () => {
-    const list = await getReferrals();
+    if (!profile?.telegramId) return;
+    const list = await getReferrals(profile.telegramId);
     setReferrals(list);
   };
 
@@ -33,7 +36,7 @@ export default function ReferralScreen() {
     if (!profile?.referralCode) return;
     try {
       await Share.share({
-        message: `Join MintGrow — the crypto merging game where you EARN real MG tokens!\n\nUse my referral code: ${profile.referralCode}\n\nDownload & enter code to get 100 MG bonus!\n\n#MintGrow #BNBChain #CryptoGame`,
+        message: `Join MintGrow — merge crypto coins and EARN real MG tokens on BNB Chain!\n\nUse my referral code: ${profile.referralCode}\n\nGet 100 MG welcome bonus + earn together!\n\n#MintGrow #BNBChain #CryptoGame`,
         title: 'Join MintGrow Game',
       });
     } catch {}
@@ -54,38 +57,22 @@ export default function ReferralScreen() {
       if (ok) {
         refreshProfile();
         setCodeInput('');
-        Alert.alert('Welcome Bonus!', 'Referral code applied! You received 100 MG bonus tokens!');
+        Alert.alert('Welcome Bonus! 🎉', 'Referral code applied! You received 100 MG bonus tokens!');
       } else {
-        Alert.alert('Invalid Code', 'This code is invalid or cannot be used');
+        Alert.alert('Invalid Code', 'This code is invalid, already used, or is your own code.');
       }
     } finally {
       setApplying(false);
     }
   };
 
-  // Simulate earning from referral (demo: add mock referral)
-  const handleDemoAddReferral = async () => {
-    const entry: ReferralEntry = {
-      code: profile?.referralCode || '',
-      username: `Player${Math.floor(Math.random() * 9000 + 1000)}`,
-      joinedAt: new Date().toISOString(),
-      tokensEarned: Math.floor(Math.random() * 500 + 100),
-    };
-    await addReferral(entry);
-    // Add referral bonus to profile
-    const p = await getProfile();
-    if (p) {
-      p.referralCount = (p.referralCount || 0) + 1;
-      p.totalTokens = Math.round((p.totalTokens + REFERRAL_BONUS_TOKENS) * 100) / 100;
-      p.referralTokensEarned = Math.round((p.referralTokensEarned + REFERRAL_BONUS_TOKENS) * 100) / 100;
-      await saveProfile(p);
-    }
-    loadReferrals();
-    refreshProfile();
-    Alert.alert('Referral Bonus!', `+${REFERRAL_BONUS_TOKENS} MG! A new player joined via your code.`);
-  };
+  const directRefs = profile?.referralCount ?? 0;
+  const totalReferralEarnings = profile?.referralTokensEarned ?? 0;
 
-  const totalReferralEarnings = referrals.reduce((s, r) => s + r.tokensEarned, 0);
+  // Which income levels the user is currently eligible for
+  const eligibleLevels = REFERRAL_LEVELS.filter(
+    l => directRefs >= l.directRequired
+  );
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
@@ -93,55 +80,98 @@ export default function ReferralScreen() {
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
 
           {/* Header */}
-          <View style={styles.headerArea}>
-            <Text style={styles.pageTitle}>👥 Referral Program</Text>
-            <Text style={styles.pageSubtitle}>Invite friends · Earn MG tokens together</Text>
-          </View>
+          <Text style={styles.pageTitle}>👥 Referral Program</Text>
+          <Text style={styles.pageSubtitle}>Invite friends · Earn MG tokens at 25 levels</Text>
 
           {/* Stats */}
           <View style={styles.statsRow}>
             <View style={[styles.statCard, styles.statCardGreen]}>
               <Text style={styles.statEmoji}>🎯</Text>
-              <Text style={[styles.statVal, { color: Colors.primary }]}>{profile?.referralCount || 0}</Text>
-              <Text style={styles.statLbl}>Total Referrals</Text>
+              <Text style={[styles.statVal, { color: Colors.primary }]}>{directRefs}</Text>
+              <Text style={styles.statLbl}>Direct Refs</Text>
             </View>
             <View style={styles.statCard}>
               <Text style={styles.statEmoji}>💰</Text>
               <Text style={[styles.statVal, { color: Colors.primary }]}>
-                {((profile?.referralTokensEarned || 0)).toFixed(0)} MG
+                {totalReferralEarnings.toFixed(0)} MG
               </Text>
-              <Text style={styles.statLbl}>Earned from Refs</Text>
+              <Text style={styles.statLbl}>Ref Earnings</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Text style={styles.statEmoji}>🏆</Text>
+              <Text style={[styles.statVal, { color: Colors.primary }]}>
+                {eligibleLevels.length}/25
+              </Text>
+              <Text style={styles.statLbl}>Active Levels</Text>
             </View>
           </View>
 
-          {/* How it Works */}
-          <View style={styles.howCard}>
-            <Text style={styles.howTitle}>How It Works</Text>
-            {[
-              { icon: '📤', text: `Share your referral code with friends` },
-              { icon: '🎁', text: `Friend uses code → gets 100 MG welcome bonus` },
-              { icon: '💵', text: `You earn +${REFERRAL_BONUS_TOKENS} MG per referral signup` },
-              { icon: '📈', text: `Earn ${(REFERRAL_INCOME_PCT * 100).toFixed(0)}% of their token income (first level)` },
-              { icon: '♾️', text: `No limit — refer as many as you want!` },
-            ].map((item, i) => (
-              <View key={i} style={styles.howItem}>
-                <Text style={styles.howEmoji}>{item.icon}</Text>
-                <Text style={styles.howText}>{item.text}</Text>
-              </View>
-            ))}
+          {/* Income Rules Note */}
+          <View style={styles.ruleNote}>
+            <MaterialIcons name="info-outline" size={14} color={Colors.info} />
+            <Text style={styles.ruleText}>
+              Referral income is credited when your referral reaches the {WITHDRAWAL_MIN.toLocaleString()} MG withdrawal threshold and calls withdraw.
+            </Text>
           </View>
 
-          {/* Your Referral Code */}
+          {/* 25-Level Income Table */}
+          <View style={styles.levelsCard}>
+            <Pressable style={styles.levelsHeader} onPress={() => setShowLevels(v => !v)}>
+              <Text style={styles.levelsTitle}>25-Level Income Structure</Text>
+              <MaterialIcons
+                name={showLevels ? 'expand-less' : 'expand-more'}
+                size={22}
+                color={Colors.primary}
+              />
+            </Pressable>
+            {showLevels && (
+              <View style={styles.levelsBody}>
+                <View style={styles.levelHeaderRow}>
+                  <Text style={[styles.levelCell, { flex: 0.6 }]}>Level</Text>
+                  <Text style={[styles.levelCell, { flex: 0.8 }]}>Income</Text>
+                  <Text style={[styles.levelCell, { flex: 1.2 }]}>Need Direct</Text>
+                  <Text style={[styles.levelCell, { flex: 0.8, textAlign: 'right' }]}>Status</Text>
+                </View>
+                {REFERRAL_LEVELS.map(rl => {
+                  const eligible = directRefs >= rl.directRequired;
+                  return (
+                    <View
+                      key={rl.level}
+                      style={[styles.levelRow, eligible && styles.eligibleRow]}
+                    >
+                      <Text style={[styles.levelCell, styles.levelCellNum, { flex: 0.6 }]}>
+                        L{rl.level}
+                      </Text>
+                      <Text style={[styles.levelCell, { flex: 0.8, color: Colors.primary, fontWeight: '700' }]}>
+                        {(rl.pct * 100).toFixed(0)}%
+                      </Text>
+                      <Text style={[styles.levelCell, { flex: 1.2 }]}>
+                        {rl.directRequired} refs
+                      </Text>
+                      <View style={{ flex: 0.8, alignItems: 'flex-end' }}>
+                        {eligible ? (
+                          <View style={styles.activePill}>
+                            <Text style={styles.activePillText}>✓</Text>
+                          </View>
+                        ) : (
+                          <Text style={styles.lockText}>🔒 {rl.directRequired - directRefs} more</Text>
+                        )}
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+          </View>
+
+          {/* Your Code */}
           <View style={styles.codeSection}>
             <Text style={styles.sectionTitle}>Your Referral Code</Text>
             <View style={styles.codeBox}>
               <Text style={styles.codeText}>{profile?.referralCode || '...'}</Text>
               <Pressable
                 style={styles.copyBtn}
-                onPress={async () => {
-                  // Copy to clipboard
-                  Alert.alert('Copied!', `Code ${profile?.referralCode} copied`);
-                }}
+                onPress={() => Alert.alert('Copied!', `Code ${profile?.referralCode} copied`)}
               >
                 <MaterialIcons name="content-copy" size={18} color={Colors.primary} />
               </Pressable>
@@ -155,7 +185,7 @@ export default function ReferralScreen() {
             />
           </View>
 
-          {/* Apply Referral Code */}
+          {/* Apply Code */}
           {!profile?.referredBy ? (
             <View style={styles.applySection}>
               <Text style={styles.sectionTitle}>Have a Referral Code?</Text>
@@ -187,13 +217,32 @@ export default function ReferralScreen() {
             </View>
           )}
 
+          {/* How It Works */}
+          <View style={styles.howCard}>
+            <Text style={styles.howTitle}>How Earnings Work</Text>
+            {[
+              { icon: '📤', text: 'Share your referral code with friends' },
+              { icon: '🎁', text: `Friend uses code → gets 100 MG welcome bonus + you get ${REFERRAL_BONUS_TOKENS} MG` },
+              { icon: '📈', text: 'You earn % of their tokens when they withdraw (if you have enough direct refs)' },
+              { icon: '🔓', text: 'L1 income: need 2 direct refs (20%). L2: 2 refs (15%). L3: 3 refs (10%). L4+: see table' },
+              { icon: '💎', text: `Affiliate income released when your referral hits ${WITHDRAWAL_MIN.toLocaleString()} MG & withdraws` },
+            ].map((item, i) => (
+              <View key={i} style={styles.howItem}>
+                <Text style={styles.howEmoji}>{item.icon}</Text>
+                <Text style={styles.howText}>{item.text}</Text>
+              </View>
+            ))}
+          </View>
+
           {/* Referrals List */}
           <View style={styles.listSection}>
             <View style={styles.listHeader}>
               <Text style={styles.sectionTitle}>Referral Activity ({referrals.length})</Text>
-              {/* Demo button */}
-              <Pressable style={styles.demoBtn} onPress={handleDemoAddReferral}>
-                <Text style={styles.demoBtnText}>+ Simulate</Text>
+              <Pressable
+                style={styles.refreshBtn}
+                onPress={loadReferrals}
+              >
+                <MaterialIcons name="refresh" size={16} color={Colors.primary} />
               </Pressable>
             </View>
 
@@ -203,28 +252,27 @@ export default function ReferralScreen() {
                 <Text style={styles.emptyText}>No referrals yet. Share your code!</Text>
               </View>
             ) : (
-              referrals.map((r, i) => (
-                <View key={i} style={styles.referralItem}>
-                  <View style={styles.referralAvatar}>
-                    <Text style={styles.referralAvatarText}>{r.username[0]}</Text>
+              referrals.map((r, i) => {
+                const hasReached = (r.refereeBalance ?? 0) >= WITHDRAWAL_MIN;
+                return (
+                  <View key={i} style={styles.referralItem}>
+                    <View style={styles.referralAvatar}>
+                      <Text style={styles.referralAvatarText}>{r.username[0]?.toUpperCase()}</Text>
+                    </View>
+                    <View style={styles.referralInfo}>
+                      <Text style={styles.referralName}>@{r.username}</Text>
+                      <Text style={styles.referralDate}>{new Date(r.joinedAt).toLocaleDateString()}</Text>
+                      {hasReached && (
+                        <Text style={styles.referralReached}>Reached withdrawal threshold ✓</Text>
+                      )}
+                    </View>
+                    <View style={styles.referralEarning}>
+                      <Text style={styles.referralEarningAmt}>+{r.tokensEarned.toFixed(0)}</Text>
+                      <Text style={styles.referralEarningUnit}>MG</Text>
+                    </View>
                   </View>
-                  <View style={styles.referralInfo}>
-                    <Text style={styles.referralName}>@{r.username}</Text>
-                    <Text style={styles.referralDate}>{new Date(r.joinedAt).toLocaleDateString()}</Text>
-                  </View>
-                  <View style={styles.referralEarning}>
-                    <Text style={styles.referralEarningAmt}>+{(r.tokensEarned * REFERRAL_INCOME_PCT).toFixed(0)}</Text>
-                    <Text style={styles.referralEarningUnit}>MG</Text>
-                  </View>
-                </View>
-              ))
-            )}
-
-            {referrals.length > 0 && (
-              <View style={styles.totalRow}>
-                <Text style={styles.totalLabel}>Total Referral Earnings</Text>
-                <Text style={styles.totalVal}>{(totalReferralEarnings * REFERRAL_INCOME_PCT).toFixed(0)} MG</Text>
-              </View>
+                );
+              })
             )}
           </View>
 
@@ -243,172 +291,129 @@ export default function ReferralScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
   scroll: { padding: Spacing.md, paddingBottom: 40 },
-
-  headerArea: { marginBottom: Spacing.md },
   pageTitle: { ...Typography.h2, color: Colors.textPrimary, marginBottom: 2 },
-  pageSubtitle: { ...Typography.small, color: Colors.textMuted },
+  pageSubtitle: { ...Typography.small, color: Colors.textMuted, marginBottom: Spacing.md },
 
-  statsRow: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.md },
+  statsRow: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.sm },
   statCard: {
-    flex: 1,
-    backgroundColor: Colors.bgCard,
-    borderRadius: Radius.lg,
-    padding: Spacing.md,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: Colors.border,
-    gap: 4,
+    flex: 1, backgroundColor: Colors.bgCard, borderRadius: Radius.lg, padding: Spacing.sm,
+    alignItems: 'center', borderWidth: 1, borderColor: Colors.border, gap: 2,
   },
   statCardGreen: { borderColor: Colors.primary },
-  statEmoji: { fontSize: 24 },
-  statVal: { fontSize: 22, fontWeight: '800', color: Colors.textPrimary },
+  statEmoji: { fontSize: 20 },
+  statVal: { fontSize: 18, fontWeight: '800' },
   statLbl: { ...Typography.caption, color: Colors.textMuted },
 
-  howCard: {
-    backgroundColor: Colors.bgCard,
-    borderRadius: Radius.lg,
+  ruleNote: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 6,
+    backgroundColor: '#E3F2FD', borderRadius: Radius.sm, padding: Spacing.sm,
+    borderWidth: 1, borderColor: '#0277BD', marginBottom: Spacing.md,
+  },
+  ruleText: { ...Typography.small, color: '#0277BD', flex: 1, lineHeight: 18 },
+
+  levelsCard: {
+    backgroundColor: Colors.bgCard, borderRadius: Radius.lg,
+    borderWidth: 1, borderColor: Colors.border, marginBottom: Spacing.md, overflow: 'hidden',
+  },
+  levelsHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     padding: Spacing.md,
-    marginBottom: Spacing.md,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    gap: Spacing.sm,
+  },
+  levelsTitle: { ...Typography.bodyBold, color: Colors.textPrimary },
+  levelsBody: { paddingHorizontal: Spacing.md, paddingBottom: Spacing.md },
+  levelHeaderRow: {
+    flexDirection: 'row', paddingVertical: 4, borderBottomWidth: 1,
+    borderBottomColor: Colors.border, marginBottom: 4,
+  },
+  levelRow: {
+    flexDirection: 'row', paddingVertical: 6, borderBottomWidth: 1,
+    borderBottomColor: Colors.bgSurface, alignItems: 'center',
+  },
+  eligibleRow: { backgroundColor: Colors.primaryGlow, borderRadius: 4, paddingHorizontal: 4 },
+  levelCell: { ...Typography.small, color: Colors.textSecondary },
+  levelCellNum: { color: Colors.textPrimary, fontWeight: '700' },
+  activePill: {
+    backgroundColor: Colors.primary, borderRadius: Radius.full,
+    paddingVertical: 2, paddingHorizontal: 8,
+  },
+  activePillText: { ...Typography.caption, color: '#fff', fontWeight: '700' },
+  lockText: { ...Typography.caption, color: Colors.textMuted },
+
+  codeSection: {
+    backgroundColor: Colors.bgCard, borderRadius: Radius.lg, padding: Spacing.md,
+    marginBottom: Spacing.md, borderWidth: 1, borderColor: Colors.primary,
+  },
+  sectionTitle: { ...Typography.bodyBold, color: Colors.textPrimary, marginBottom: 4 },
+  sectionSub: { ...Typography.small, color: Colors.textMuted, marginBottom: Spacing.md },
+  codeBox: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.bgSurface,
+    borderRadius: Radius.md, padding: Spacing.md, borderWidth: 1, borderColor: Colors.borderStrong, gap: Spacing.sm,
+  },
+  codeText: { flex: 1, fontSize: 20, fontWeight: '800', color: Colors.primary, letterSpacing: 4 },
+  copyBtn: { padding: 6 },
+
+  applySection: {
+    backgroundColor: Colors.bgCard, borderRadius: Radius.lg, padding: Spacing.md,
+    marginBottom: Spacing.md, borderWidth: 1, borderColor: Colors.border,
+  },
+  inputRow: { flexDirection: 'row', gap: Spacing.sm, alignItems: 'center' },
+  input: {
+    flex: 1, backgroundColor: Colors.bgSurface, borderRadius: Radius.md,
+    borderWidth: 1, borderColor: Colors.border, paddingHorizontal: Spacing.md,
+    paddingVertical: 12, color: Colors.textPrimary, fontSize: 15, fontWeight: '700',
+    letterSpacing: 2, minHeight: 48,
+  },
+
+  referredBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Colors.primaryGlow,
+    borderRadius: Radius.md, padding: Spacing.md, marginBottom: Spacing.md,
+    borderWidth: 1, borderColor: Colors.primary,
+  },
+  referredText: { ...Typography.small, color: Colors.primary },
+
+  howCard: {
+    backgroundColor: Colors.bgCard, borderRadius: Radius.lg, padding: Spacing.md,
+    marginBottom: Spacing.md, borderWidth: 1, borderColor: Colors.border, gap: Spacing.sm,
   },
   howTitle: { ...Typography.bodyBold, color: Colors.textPrimary, marginBottom: 4 },
   howItem: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm },
   howEmoji: { fontSize: 16, width: 22 },
   howText: { ...Typography.small, color: Colors.textSecondary, flex: 1, lineHeight: 20 },
 
-  codeSection: {
-    backgroundColor: Colors.bgCard,
-    borderRadius: Radius.lg,
-    padding: Spacing.md,
-    marginBottom: Spacing.md,
-    borderWidth: 1,
-    borderColor: Colors.primary,
-  },
-  sectionTitle: { ...Typography.bodyBold, color: Colors.textPrimary, marginBottom: 4 },
-  sectionSub: { ...Typography.small, color: Colors.textMuted, marginBottom: Spacing.md },
-  codeBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.bgSurface,
-    borderRadius: Radius.md,
-    padding: Spacing.md,
-    borderWidth: 1,
-    borderColor: Colors.borderStrong,
-    gap: Spacing.sm,
-  },
-  codeText: { flex: 1, fontSize: 20, fontWeight: '800', color: Colors.primary, letterSpacing: 4 },
-  copyBtn: { padding: 6 },
-
-  applySection: {
-    backgroundColor: Colors.bgCard,
-    borderRadius: Radius.lg,
-    padding: Spacing.md,
-    marginBottom: Spacing.md,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  inputRow: { flexDirection: 'row', gap: Spacing.sm, alignItems: 'center' },
-  input: {
-    flex: 1,
-    backgroundColor: Colors.bgSurface,
-    borderRadius: Radius.md,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 12,
-    color: Colors.textPrimary,
-    fontSize: 15,
-    fontWeight: '700',
-    letterSpacing: 2,
-    minHeight: 48,
-  },
-
-  referredBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: Colors.primaryGlow,
-    borderRadius: Radius.md,
-    padding: Spacing.md,
-    marginBottom: Spacing.md,
-    borderWidth: 1,
-    borderColor: Colors.primary,
-  },
-  referredText: { ...Typography.small, color: Colors.primary },
-
   listSection: {
-    backgroundColor: Colors.bgCard,
-    borderRadius: Radius.lg,
-    padding: Spacing.md,
-    marginBottom: Spacing.md,
-    borderWidth: 1,
-    borderColor: Colors.border,
+    backgroundColor: Colors.bgCard, borderRadius: Radius.lg, padding: Spacing.md,
+    marginBottom: Spacing.md, borderWidth: 1, borderColor: Colors.border,
   },
   listHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.sm },
-  demoBtn: {
-    backgroundColor: Colors.bgSurface,
-    borderRadius: Radius.full,
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderWidth: 1,
-    borderColor: Colors.border,
+  refreshBtn: {
+    width: 30, height: 30, borderRadius: 15, backgroundColor: Colors.bgSurface,
+    alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: Colors.border,
   },
-  demoBtnText: { ...Typography.caption, color: Colors.textMuted },
-
   empty: { alignItems: 'center', paddingVertical: Spacing.lg },
   emptyEmoji: { fontSize: 36, marginBottom: 8 },
   emptyText: { ...Typography.body, color: Colors.textMuted },
 
   referralItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.bgSurface,
-    borderRadius: Radius.md,
-    padding: Spacing.sm,
-    marginBottom: Spacing.sm,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    gap: Spacing.sm,
+    flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.bgSurface,
+    borderRadius: Radius.md, padding: Spacing.sm, marginBottom: Spacing.sm,
+    borderWidth: 1, borderColor: Colors.border, gap: Spacing.sm,
   },
   referralAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: Colors.primaryGlow,
-    borderWidth: 1,
-    borderColor: Colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.primaryGlow,
+    borderWidth: 1, borderColor: Colors.primary, alignItems: 'center', justifyContent: 'center',
   },
   referralAvatarText: { ...Typography.bodyBold, color: Colors.primary },
-  referralInfo: { flex: 1 },
+  referralInfo: { flex: 1, gap: 2 },
   referralName: { ...Typography.smallBold, color: Colors.textPrimary },
   referralDate: { ...Typography.caption, color: Colors.textMuted },
+  referralReached: { ...Typography.caption, color: Colors.success, fontWeight: '600' },
   referralEarning: { alignItems: 'flex-end' },
   referralEarningAmt: { ...Typography.bodyBold, color: Colors.primary },
   referralEarningUnit: { ...Typography.caption, color: Colors.textMuted },
 
-  totalRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: Spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: Colors.border,
-    marginTop: 4,
-  },
-  totalLabel: { ...Typography.smallBold, color: Colors.textSecondary },
-  totalVal: { ...Typography.bodyBold, color: Colors.primary },
-
   networkNote: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: Colors.primaryGlow,
-    borderRadius: Radius.sm,
-    padding: Spacing.sm,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: Colors.primaryGlow, borderRadius: Radius.sm, padding: Spacing.sm,
   },
   networkText: { ...Typography.small, color: Colors.primary, flex: 1 },
 });

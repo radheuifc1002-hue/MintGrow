@@ -1,8 +1,6 @@
-// Monetag Ad Service — WebView Bridge Integration
-// Replace these with your actual Monetag credentials
-export const MONETAG_PUBLISHER_ID = 'YOUR_MONETAG_PUBLISHER_ID';
-export const MONETAG_REWARDED_ZONE_ID = 'YOUR_REWARDED_ZONE_ID';
-export const MONETAG_INTERSTITIAL_ZONE_ID = 'YOUR_INTERSTITIAL_ZONE_ID';
+// Monetag Ad Service — Server-Side Credentials via Edge Function
+import { supabase } from '@/services/supabase';
+import { FunctionsHttpError } from '@supabase/supabase-js';
 
 export interface AdResult {
   watched: boolean;
@@ -29,6 +27,23 @@ export const resolveAdFromBridge = (result: AdResult) => {
   }
 };
 
+// Fetch Monetag config securely from Edge Function
+export const getMonetazConfig = async (): Promise<{ publisherId: string; zoneId: string; scriptUrl: string } | null> => {
+  try {
+    const { data, error } = await supabase.functions.invoke('monetag-ad', {
+      body: { action: 'get_config' },
+    });
+    if (error) {
+      if (error instanceof FunctionsHttpError) {
+        const text = await error.context?.text();
+        console.error('Monetag edge fn error:', text);
+      }
+      return null;
+    }
+    return data;
+  } catch { return null; }
+};
+
 export const showRewardedAd = (): Promise<AdResult> => {
   return new Promise((resolve) => {
     if (_showAdTrigger) {
@@ -47,10 +62,7 @@ export const showInterstitialAd = (): Promise<AdResult> => {
 
 export const preloadAd = async (): Promise<void> => {};
 
-export const getMontagScriptUrl = () =>
-  `https://a.monetag.com/tag/?pub=${MONETAG_PUBLISHER_ID}`;
-
-// HTML for Monetag WebView — injected with SDK + postMessage bridge
+// HTML for Monetag WebView — uses config fetched from Edge Function
 export const buildMonetazAdHtml = (publisherId: string, zoneId: string): string => `
 <!DOCTYPE html>
 <html>
@@ -58,48 +70,62 @@ export const buildMonetazAdHtml = (publisherId: string, zoneId: string): string 
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
-    body { margin: 0; background: #000; display:flex; align-items:center; justify-content:center; height:100vh; }
-    #ad-container { width: 100%; max-width: 400px; }
-    #status { color: #fff; font-family: sans-serif; text-align: center; padding: 20px; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #0A2E1F; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: -apple-system, sans-serif; }
+    #status { color: #00A86B; font-size: 14px; text-align: center; padding: 20px; }
+    #timer { color: #fff; font-size: 24px; font-weight: bold; margin-bottom: 8px; }
+    #label { color: #7DA890; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; }
+    #ad-wrap { width: 100%; max-width: 400px; min-height: 250px; display: flex; align-items: center; justify-content: center; }
   </style>
 </head>
 <body>
-  <div id="ad-container"><div id="status">Loading ad...</div></div>
+  <div id="status">Loading ad...</div>
+  <div id="ad-wrap" id="ad-container"></div>
+  <div id="timer"></div>
+  <div id="label">Please watch the full ad</div>
+
   <script>
-    // Monetag SDK Integration
+    var adDone = false;
+    var countdown = 6;
+
+    function notifyReward() {
+      if (adDone) return;
+      adDone = true;
+      if (window.ReactNativeWebView) {
+        window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'AD_REWARD', watched: true }));
+      }
+    }
+
+    function notifyClosed() {
+      if (adDone) return;
+      if (window.ReactNativeWebView) {
+        window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'AD_CLOSED', watched: false }));
+      }
+    }
+
+    // Monetag SDK
     (function(d, z, s) {
-      s.src = 'https://'+d+'/'+z;
-      try { (document.body || document.documentElement).appendChild(s) } catch(e) {}
+      s.src = 'https://' + d + '/' + z;
+      s.onload = function() {
+        document.getElementById('status').style.display = 'none';
+      };
+      try { (document.body || document.documentElement).appendChild(s); } catch(e) {}
     })('a.monetag.com', '${zoneId}', document.createElement('script'));
 
-    // Listen for Monetag reward events
-    window.monetagRewardCallback = function(result) {
-      if (window.ReactNativeWebView) {
-        window.ReactNativeWebView.postMessage(JSON.stringify({
-          type: 'AD_REWARD',
-          watched: true
-        }));
-      }
-    };
+    // Override Monetag callbacks
+    window.monetagRewardCallback = notifyReward;
+    window.monetagAdClosed = notifyClosed;
 
-    window.monetagAdClosed = function() {
-      if (window.ReactNativeWebView) {
-        window.ReactNativeWebView.postMessage(JSON.stringify({
-          type: 'AD_CLOSED',
-          watched: false
-        }));
+    // Timer countdown
+    var timerEl = document.getElementById('timer');
+    var timerInterval = setInterval(function() {
+      countdown--;
+      timerEl.textContent = countdown > 0 ? countdown + 's' : '';
+      if (countdown <= 0) {
+        clearInterval(timerInterval);
+        notifyReward();
       }
-    };
-
-    // Fallback: if ad loads but no explicit reward, resolve after 6s
-    setTimeout(function() {
-      if (window.ReactNativeWebView) {
-        window.ReactNativeWebView.postMessage(JSON.stringify({
-          type: 'AD_REWARD',
-          watched: true
-        }));
-      }
-    }, 6000);
+    }, 1000);
   </script>
 </body>
 </html>

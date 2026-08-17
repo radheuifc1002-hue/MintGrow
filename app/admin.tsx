@@ -9,6 +9,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { Colors, Spacing, Radius, Typography } from '@/constants/theme';
 import { getWithdrawals, updateWithdrawal, getProfile, saveProfile } from '@/services/storage';
+import { supabase } from '@/services/supabase';
 import { WithdrawalRequest, TOKEN_NETWORK } from '@/types/game';
 import { GlowButton } from '@/components/ui/GlowButton';
 
@@ -19,7 +20,7 @@ export default function AdminScreen() {
   const router = useRouter();
   const [tab, setTab] = useState<TabType>('withdrawals');
   const [withdrawals, setWithdrawals] = useState<WithdrawalRequest[]>([]);
-  const [profile, setProfile] = useState<any>(null);
+  const [statsData, setStatsData] = useState({ totalPlayers: 0, totalTokens: 0, totalAds: 0, totalGames: 0 });
   const [selected, setSelected] = useState<WithdrawalRequest | null>(null);
   const [txHashInput, setTxHashInput] = useState('');
   const [filter, setFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('pending');
@@ -27,10 +28,24 @@ export default function AdminScreen() {
   useEffect(() => { loadData(); }, []);
 
   const loadData = async () => {
+    // Load ALL withdrawals (admin view — no filter by telegram_id)
     const list = await getWithdrawals();
     setWithdrawals(list);
-    const p = await getProfile();
-    setProfile(p);
+
+    // Load platform stats from Supabase
+    try {
+      const { data } = await supabase
+        .from('players')
+        .select('total_tokens, ads_watched, games_played');
+      if (data) {
+        setStatsData({
+          totalPlayers: data.length,
+          totalTokens: data.reduce((s, r) => s + parseFloat(r.total_tokens ?? '0'), 0),
+          totalAds: data.reduce((s, r) => s + (r.ads_watched ?? 0), 0),
+          totalGames: data.reduce((s, r) => s + (r.games_played ?? 0), 0),
+        });
+      }
+    } catch {}
   };
 
   const handleApprove = async () => {
@@ -41,14 +56,71 @@ export default function AdminScreen() {
     await updateWithdrawal(selected.id, {
       status: 'approved', txHash: txHashInput.trim(), processedAt: new Date().toISOString(),
     });
-    const p = await getProfile();
-    if (p) {
-      p.withdrawnTokens = Math.round((p.withdrawnTokens + selected.amount) * 100) / 100;
-      p.pendingTokens = Math.max(0, Math.round((p.pendingTokens - selected.amount) * 100) / 100);
-      await saveProfile(p);
+
+    // Refund any referral affiliate income from the referee's withdrawal
+    // (triggered by the referrer's referral reaching withdrawal threshold)
+    await creditReferralCommissions(selected.telegramId, selected.amount);
+
+    // Update local player's withdrawn/pending balance
+    const { data: pRow } = await supabase
+      .from('players')
+      .select('total_tokens, pending_tokens, withdrawn_tokens')
+      .eq('telegram_id', selected.telegramId)
+      .single();
+    if (pRow) {
+      await supabase.from('players').update({
+        withdrawn_tokens: parseFloat(pRow.withdrawn_tokens ?? '0') + selected.amount,
+        pending_tokens: Math.max(0, parseFloat(pRow.pending_tokens ?? '0') - selected.amount),
+      }).eq('telegram_id', selected.telegramId);
     }
-    setSelected(null); setTxHashInput(''); loadData();
-    Alert.alert('Approved!', 'Withdrawal approved. TX hash recorded on BNB Chain.');
+
+    setSelected(null);
+    setTxHashInput('');
+    loadData();
+    Alert.alert('Approved!', 'Withdrawal approved. TX hash recorded. Referral commissions credited.');
+  };
+
+  const creditReferralCommissions = async (refereeTgId: string, withdrawnAmount: number) => {
+    try {
+      // Find all referrers of this player at various levels
+      const { data: refs } = await supabase
+        .from('referrals')
+        .select('referrer_telegram_id, level')
+        .eq('referee_telegram_id', refereeTgId);
+
+      if (!refs || refs.length === 0) return;
+
+      const { REFERRAL_LEVELS, getEligibleReferralPct } = await import('@/types/game');
+
+      for (const ref of refs) {
+        // Get referrer's direct ref count
+        const { data: referrer } = await supabase
+          .from('players')
+          .select('direct_referral_count, total_tokens, referral_tokens_earned')
+          .eq('telegram_id', ref.referrer_telegram_id)
+          .single();
+        if (!referrer) continue;
+
+        const pct = getEligibleReferralPct(ref.level, referrer.direct_referral_count ?? 0);
+        if (pct <= 0) continue;
+
+        const commission = Math.round(withdrawnAmount * pct * 100) / 100;
+        if (commission <= 0) continue;
+
+        // Credit commission + update referral record
+        await supabase.from('players').update({
+          total_tokens: parseFloat(referrer.total_tokens) + commission,
+          referral_tokens_earned: parseFloat(referrer.referral_tokens_earned ?? '0') + commission,
+        }).eq('telegram_id', ref.referrer_telegram_id);
+
+        await supabase.from('referrals').update({
+          tokens_earned: commission,
+        }).eq('referrer_telegram_id', ref.referrer_telegram_id)
+          .eq('referee_telegram_id', refereeTgId);
+      }
+    } catch (e) {
+      console.error('Commission credit error:', e);
+    }
   };
 
   const handleReject = async () => {
@@ -58,13 +130,21 @@ export default function AdminScreen() {
       {
         text: 'Reject', style: 'destructive', onPress: async () => {
           await updateWithdrawal(selected.id, { status: 'rejected', processedAt: new Date().toISOString() });
-          const p = await getProfile();
-          if (p) {
-            p.totalTokens = Math.round((p.totalTokens + selected.amount) * 100) / 100;
-            p.pendingTokens = Math.max(0, Math.round((p.pendingTokens - selected.amount) * 100) / 100);
-            await saveProfile(p);
+          // Refund tokens back in Supabase
+          const { data: pRow } = await supabase
+            .from('players')
+            .select('total_tokens, pending_tokens')
+            .eq('telegram_id', selected.telegramId)
+            .single();
+          if (pRow) {
+            await supabase.from('players').update({
+              total_tokens: parseFloat(pRow.total_tokens ?? '0') + selected.amount,
+              pending_tokens: Math.max(0, parseFloat(pRow.pending_tokens ?? '0') - selected.amount),
+            }).eq('telegram_id', selected.telegramId);
           }
-          setSelected(null); setTxHashInput(''); loadData();
+          setSelected(null);
+          setTxHashInput('');
+          loadData();
         },
       },
     ]);
@@ -93,15 +173,15 @@ export default function AdminScreen() {
             <Text style={styles.headerSub}>MintGrow Management</Text>
           </View>
         </View>
-        <View style={styles.adminBadge}>
-          <Text style={styles.adminBadgeText}>ADMIN</Text>
-        </View>
+        <Pressable style={styles.refreshHeaderBtn} onPress={loadData} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <MaterialIcons name="refresh" size={20} color={Colors.primary} />
+        </Pressable>
       </View>
 
       {pendingCount > 0 && (
         <View style={styles.alertBar}>
           <MaterialIcons name="notifications-active" size={14} color={Colors.warning} />
-          <Text style={styles.alertText}>{pendingCount} pending withdrawal{pendingCount > 1 ? 's' : ''}</Text>
+          <Text style={styles.alertText}>{pendingCount} pending withdrawal{pendingCount > 1 ? 's' : ''} · {totalPending.toLocaleString()} MG total</Text>
         </View>
       )}
 
@@ -109,7 +189,7 @@ export default function AdminScreen() {
         {(['withdrawals', 'stats'] as TabType[]).map(t => (
           <Pressable key={t} style={[styles.tabBtn, tab === t && styles.activeTab]} onPress={() => setTab(t)}>
             <Text style={[styles.tabText, tab === t && styles.activeTabText]}>
-              {t === 'withdrawals' ? '📤 Withdrawals' : '📊 Stats'}
+              {t === 'withdrawals' ? '📤 Withdrawals' : '📊 Platform Stats'}
             </Text>
           </Pressable>
         ))}
@@ -118,21 +198,22 @@ export default function AdminScreen() {
       {tab === 'stats' ? (
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
           <View style={styles.statsGrid}>
+            <StatBox label="Total Players" value={statsData.totalPlayers} color={Colors.primary} />
+            <StatBox label="Total MG Issued" value={`${(statsData.totalTokens / 1000).toFixed(0)}K`} color={Colors.success} />
             <StatBox label="Pending MG" value={totalPending.toLocaleString()} color={Colors.warning} />
-            <StatBox label="Approved MG" value={totalApproved.toLocaleString()} color={Colors.success} />
-            <StatBox label="Total Requests" value={withdrawals.length} color={Colors.primary} />
-            <StatBox label="Player Games" value={profile?.gamesPlayed ?? 0} color={Colors.info} />
-            <StatBox label="Best Score" value={(profile?.bestScore ?? 0).toLocaleString()} color={Colors.accent} />
-            <StatBox label="Ads Watched" value={profile?.adsWatched ?? 0} color={Colors.primary} />
+            <StatBox label="Approved MG" value={totalApproved.toLocaleString()} color={Colors.accent} />
+            <StatBox label="Total Ads" value={statsData.totalAds} color={Colors.info} />
+            <StatBox label="Total Games" value={statsData.totalGames} color={Colors.primaryDark} />
           </View>
           <View style={styles.infoCard}>
             <Text style={styles.infoTitle}>Admin Workflow</Text>
             <Text style={styles.infoBody}>
-              1. Review pending withdrawals below{'\n'}
-              2. Send MG tokens from treasury wallet to user's BNB Chain address{'\n'}
-              3. Copy the BNB Chain transaction hash{'\n'}
+              1. Review pending withdrawals{'\n'}
+              2. Send MG from treasury wallet to user's BNB Chain address{'\n'}
+              3. Copy the BNB Chain TX hash{'\n'}
               4. Enter TX hash and tap Approve{'\n'}
-              5. Rejected requests auto-refund tokens
+              5. Approving auto-credits referral commissions across 25 levels{'\n'}
+              6. Rejected requests auto-refund tokens to user
             </Text>
           </View>
           <View style={styles.infoCard}>
@@ -173,8 +254,8 @@ export default function AdminScreen() {
                 <Text style={styles.requestAmount}>{w.amount.toLocaleString()} MG</Text>
                 <Text style={styles.requestWallet} numberOfLines={1}>→ {w.walletAddress}</Text>
                 <Text style={styles.requestDate}>{new Date(w.createdAt).toLocaleString()}</Text>
-                {w.txHash && <Text style={styles.txHash}>TX: {w.txHash.slice(0, 20)}...</Text>}
-                {w.status === 'pending' && <Text style={styles.tapHint}>Tap to review →</Text>}
+                {w.txHash ? <Text style={styles.txHash}>TX: {w.txHash.slice(0, 20)}...</Text> : null}
+                {w.status === 'pending' ? <Text style={styles.tapHint}>Tap to review →</Text> : null}
               </Pressable>
             ))
           )}
@@ -188,6 +269,7 @@ export default function AdminScreen() {
             <Text style={styles.modalTitle}>Review Withdrawal</Text>
             <View style={styles.modalInfo}>
               <InfoRow label="User" value={`@${selected?.username}`} />
+              <InfoRow label="Telegram ID" value={selected?.telegramId ?? ''} />
               <InfoRow label="Amount" value={`${selected?.amount.toLocaleString()} MG`} />
               <InfoRow label="Wallet" value={selected?.walletAddress ?? ''} mono />
               <InfoRow label="Network" value={TOKEN_NETWORK} />
@@ -205,15 +287,15 @@ export default function AdminScreen() {
                   placeholderTextColor={Colors.textMuted}
                   autoCapitalize="none"
                 />
-                <GlowButton label="Approve & Confirm" onPress={handleApprove} variant="primary" fullWidth style={{ marginBottom: Spacing.sm }} />
-                <GlowButton label="Reject & Refund" onPress={handleReject} variant="danger" fullWidth style={{ marginBottom: Spacing.sm }} />
+                <GlowButton label="✓ Approve & Confirm" onPress={handleApprove} variant="primary" fullWidth style={{ marginBottom: Spacing.sm }} />
+                <GlowButton label="✗ Reject & Refund" onPress={handleReject} variant="danger" fullWidth style={{ marginBottom: Spacing.sm }} />
               </>
             ) : (
               <View style={[styles.processedBanner, { borderColor: statusColor(selected?.status ?? '') }]}>
                 <Text style={[styles.processedText, { color: statusColor(selected?.status ?? '') }]}>
                   {selected?.status?.toUpperCase()} · {new Date(selected?.processedAt ?? '').toLocaleString()}
                 </Text>
-                {selected?.txHash && <Text style={styles.txHashFull}>TX: {selected.txHash}</Text>}
+                {selected?.txHash ? <Text style={styles.txHashFull}>TX: {selected.txHash}</Text> : null}
               </View>
             )}
 
@@ -265,8 +347,7 @@ const styles = StyleSheet.create({
   headerLogo: { width: 32, height: 32, borderRadius: 8 },
   headerTitle: { ...Typography.bodyBold, color: Colors.textPrimary },
   headerSub: { ...Typography.caption, color: Colors.textMuted },
-  adminBadge: { backgroundColor: Colors.error, borderRadius: Radius.full, paddingHorizontal: 10, paddingVertical: 4 },
-  adminBadgeText: { ...Typography.caption, color: '#fff', fontWeight: '700' },
+  refreshHeaderBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.bgSurface, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: Colors.border },
   alertBar: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(245,127,23,0.1)', padding: Spacing.sm + 2, paddingHorizontal: Spacing.md, borderBottomWidth: 1, borderBottomColor: 'rgba(245,127,23,0.3)' },
   alertText: { ...Typography.small, color: Colors.warning },
   tabRow: { flexDirection: 'row', backgroundColor: Colors.bgCard, padding: 4, margin: Spacing.md, borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.border },
