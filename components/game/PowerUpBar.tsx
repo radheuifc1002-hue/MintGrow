@@ -18,8 +18,8 @@ export function PowerUpBar({ onWatchAd, onSpendTokens, loading }: Props) {
     return (
       <View style={styles.destroyBanner}>
         <MaterialIcons name="touch-app" size={18} color={Colors.error} />
-        <Text style={styles.destroyText}>Tap any tile to destroy it</Text>
-        <Pressable onPress={cancelDestroy} style={styles.cancelBtn}>
+        <Text style={styles.destroyText}>Tap any tile on the board to destroy it</Text>
+        <Pressable onPress={cancelDestroy} style={styles.cancelBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Text style={styles.cancelText}>Cancel</Text>
         </Pressable>
       </View>
@@ -28,111 +28,132 @@ export function PowerUpBar({ onWatchAd, onSpendTokens, loading }: Props) {
 
   return (
     <View style={styles.container}>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+      <View style={styles.row}>
         {POWER_UPS.map(pu => {
           const owned = profile?.powerUps?.[pu.type] || 0;
           const isLoading = loading === pu.type;
 
           return (
-            <View key={pu.type} style={styles.powerUpItem}>
-              <Pressable
-                style={({ pressed }) => [
-                  styles.powerUpBtn,
-                  owned > 0 && styles.powerUpBtnActive,
-                  pressed && { opacity: 0.7 },
-                ]}
-                onPress={() => owned > 0 ? onWatchAd(pu.type) : onWatchAd(pu.type)}
-                disabled={isLoading}
-              >
-                {isLoading ? (
-                  <ActivityIndicator size="small" color={Colors.primary} />
-                ) : (
-                  <>
-                    <Text style={styles.powerUpEmoji}>{pu.emoji}</Text>
-                    {owned > 0 && (
-                      <View style={styles.ownedBadge}>
-                        <Text style={styles.ownedBadgeText}>{owned}</Text>
-                      </View>
-                    )}
-                  </>
-                )}
-              </Pressable>
-              <Text style={styles.powerUpLabel} numberOfLines={1}>{pu.label}</Text>
-              {owned === 0 && (
-                <Text style={styles.adLabel}>📺 Ad</Text>
+            <Pressable
+              key={pu.type}
+              style={({ pressed }) => [
+                styles.powerUpBtn,
+                owned > 0 && styles.powerUpBtnOwned,
+                pressed && { opacity: 0.7 },
+              ]}
+              onPress={() => onWatchAd(pu.type)}
+              disabled={isLoading}
+              hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+            >
+              {isLoading ? (
+                <ActivityIndicator size="small" color={Colors.primary} />
+              ) : (
+                <>
+                  <Text style={styles.emoji}>{pu.emoji}</Text>
+                  {owned > 0 && (
+                    <View style={styles.badge}>
+                      <Text style={styles.badgeText}>{owned}</Text>
+                    </View>
+                  )}
+                </>
               )}
-            </View>
+              <Text style={styles.label} numberOfLines={1}>{pu.label}</Text>
+              {owned === 0 && (
+                <Text style={styles.adHint}>📺 Watch Ad</Text>
+              )}
+              {owned > 0 && (
+                <Text style={styles.useHint}>Tap to use</Text>
+              )}
+            </Pressable>
           );
         })}
-      </ScrollView>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    paddingVertical: Spacing.xs,
+    backgroundColor: Colors.bgCard,
     borderTopWidth: 1,
     borderTopColor: Colors.border,
-    backgroundColor: Colors.bgCard,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.sm,
   },
-  scroll: {
-    paddingHorizontal: Spacing.md,
-    gap: Spacing.sm,
-    paddingVertical: 4,
-  },
-  powerUpItem: {
-    alignItems: 'center',
-    width: 62,
+  row: {
+    flexDirection: 'row',
+    gap: Spacing.xs,
+    justifyContent: 'space-between',
   },
   powerUpBtn: {
-    width: 48,
-    height: 48,
-    borderRadius: Radius.md,
-    backgroundColor: Colors.bgSurface,
-    borderWidth: 1.5,
-    borderColor: Colors.border,
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 2,
+    backgroundColor: Colors.bgSurface,
+    borderRadius: Radius.md,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    minHeight: 68,
     position: 'relative',
+    gap: 2,
   },
-  powerUpBtnActive: {
+  powerUpBtnOwned: {
     borderColor: Colors.primary,
     backgroundColor: Colors.primaryGlow,
   },
-  powerUpEmoji: { fontSize: 22 },
-  ownedBadge: {
+  emoji: { fontSize: 20 },
+  badge: {
     position: 'absolute',
-    top: -4,
-    right: -4,
+    top: 4,
+    right: 4,
     backgroundColor: Colors.primary,
     borderRadius: 8,
-    width: 16,
+    minWidth: 16,
     height: 16,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 2,
   },
-  ownedBadgeText: { fontSize: 9, fontWeight: '800', color: '#fff' },
-  powerUpLabel: { ...Typography.caption, color: Colors.textMuted, textAlign: 'center', fontSize: 9 },
-  adLabel: { fontSize: 9, color: Colors.warning, textAlign: 'center' },
+  badgeText: { fontSize: 9, fontWeight: '800', color: '#fff' },
+  label: {
+    ...Typography.caption,
+    color: Colors.textPrimary,
+    fontWeight: '600',
+    textAlign: 'center',
+    fontSize: 9,
+  },
+  adHint: {
+    fontSize: 8,
+    color: Colors.warning,
+    textAlign: 'center',
+    fontWeight: '600',
+  },
+  useHint: {
+    fontSize: 8,
+    color: Colors.primary,
+    textAlign: 'center',
+    fontWeight: '600',
+  },
 
   destroyBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
-    backgroundColor: 'rgba(211,47,47,0.1)',
-    padding: Spacing.sm,
+    backgroundColor: 'rgba(211,47,47,0.08)',
+    paddingVertical: Spacing.sm,
     paddingHorizontal: Spacing.md,
-    borderTopWidth: 1,
+    borderTopWidth: 1.5,
     borderTopColor: Colors.error,
+    minHeight: 52,
   },
   destroyText: { ...Typography.small, color: Colors.error, flex: 1 },
   cancelBtn: {
     backgroundColor: Colors.error,
     borderRadius: Radius.sm,
-    paddingVertical: 4,
-    paddingHorizontal: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
   },
   cancelText: { ...Typography.caption, color: '#fff', fontWeight: '700' },
 });

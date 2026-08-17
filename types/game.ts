@@ -1,6 +1,6 @@
 export type TileType = 'normal' | 'bomb' | 'blocker' | 'multiplier';
 
-export type PowerUpType = 'undo' | 'destroy' | 'clear_blockers' | 'extra_row';
+export type PowerUpType = 'undo' | 'destroy' | 'clear_blockers' | 'shuffle';
 
 export interface Tile {
   id: string;
@@ -83,7 +83,7 @@ export const POWER_UPS: PowerUp[] = [
   { type: 'undo',           label: 'Undo Move',       emoji: '↩️',  description: 'Reverse your last move',          adRequired: true,  tokenCost: 500 },
   { type: 'destroy',        label: 'Destroy Tile',    emoji: '💥',  description: 'Remove any one tile from board',   adRequired: true,  tokenCost: 1000 },
   { type: 'clear_blockers', label: 'Clear Blockers',  emoji: '🧹',  description: 'Remove all 🔒 blocker tiles',      adRequired: true,  tokenCost: 2000 },
-  { type: 'extra_row',      label: 'Continue Game',   emoji: '▶️',  description: 'Continue where you left off',     adRequired: true,  tokenCost: 0 },
+  { type: 'shuffle',        label: 'Shuffle Board',   emoji: '🔀',  description: 'Randomly shuffle all tiles',       adRequired: true,  tokenCost: 1500 },
 ];
 
 export const LEVEL_REWARDS: LevelReward[] = [
@@ -109,5 +109,5 @@ export const DEFAULT_POWER_UPS: Record<PowerUpType, number> = {
   undo: 0,
   destroy: 0,
   clear_blockers: 0,
-  extra_row: 0,
+  shuffle: 0,
 };

@@ -5,10 +5,10 @@ import {
 } from '@/services/gameEngine';
 import {
   getProfile, saveProfile, updateProfileTokens, createDefaultProfile,
-  addPowerUp, usePowerUp as consumePowerUp, spendTokensForPowerUp,
-  saveBoardState, getSavedBoard, clearSavedBoard, creditReferralEarning,
+  usePowerUp as consumePowerUp,
+  saveBoardState, getSavedBoard, clearSavedBoard,
 } from '@/services/storage';
-import { Tile, PlayerProfile, LEVEL_REWARDS, PowerUpType, POWER_UPS, DEFAULT_POWER_UPS } from '@/types/game';
+import { Tile, PlayerProfile, LEVEL_REWARDS, PowerUpType } from '@/types/game';
 
 interface GameContextType {
   board: (Tile | null)[][];
@@ -22,9 +22,9 @@ interface GameContextType {
   isWon: boolean;
   profile: PlayerProfile | null;
   levelUpReward: number | null;
-  newTierValue: number | null;          // for congratulation popup
+  newTierValue: number | null;
   isSelectingDestroy: boolean;
-  canContinue: boolean;                 // has saved board to restore
+  canContinue: boolean;
   move: (dir: 'up' | 'down' | 'left' | 'right') => void;
   newGame: () => void;
   continueGame: () => void;
@@ -33,7 +33,6 @@ interface GameContextType {
   dismissNewTier: () => void;
   setProfile: (p: PlayerProfile) => void;
   refreshProfile: () => void;
-  // Power-ups
   activatePowerUp: (type: PowerUpType) => Promise<boolean>;
   selectTileToDestroy: (row: number, col: number) => void;
   cancelDestroy: () => void;
@@ -59,6 +58,13 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const scoreRef = useRef(0);
   const movesRef = useRef(0);
   const boardRef = useRef(board);
+
+  // ─── Undo history (last 3 states) ───────────────────────────────────────────
+  const undoStack = useRef<Array<{ board: (Tile | null)[][]; score: number; moves: number }>>([]);
+
+  const pushUndo = (b: (Tile | null)[][], s: number, m: number) => {
+    undoStack.current = [...undoStack.current.slice(-2), { board: b.map(r => [...r]), score: s, moves: m }];
+  };
 
   useEffect(() => { loadProfile(); checkSavedBoard(); }, []);
 
@@ -90,10 +96,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
       const { board: moved, score: gained, moved: didMove, newTierValue: ntv } = moveBoard(prev, dir);
       if (!didMove) return prev;
 
-      // Congratulate on new tile tier from merge
-      if (ntv && ntv > 2) {
-        setNewTierValue(ntv);
-      }
+      // Save state for undo before applying
+      pushUndo(prev, scoreRef.current, movesRef.current);
+
+      if (ntv && ntv > 2) setNewTierValue(ntv);
 
       setScore(s => {
         const newScore = s + gained;
@@ -129,7 +135,6 @@ export function GameProvider({ children }: { children: ReactNode }) {
       if (checkWin(withSpawn) && !isWon) setIsWon(true);
       if (checkGameOver(withSpawn)) {
         setIsGameOver(true);
-        // Auto-save board for "continue" feature
         saveBoardState({ board: withSpawn, score: scoreRef.current, moves: movesRef.current });
         setCanContinue(true);
       }
@@ -151,15 +156,12 @@ export function GameProvider({ children }: { children: ReactNode }) {
     setIsGameOver(false);
     setIsWon(false);
     setLevel(1);
+    undoStack.current = [];
     clearSavedBoard();
     setCanContinue(false);
 
     getProfile().then(p => {
-      if (p) {
-        p.gamesPlayed += 1;
-        saveProfile(p);
-        setProfileState(p);
-      }
+      if (p) { p.gamesPlayed += 1; saveProfile(p); setProfileState(p); }
     });
   }, []);
 
@@ -177,6 +179,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     setIsGameOver(false);
     setIsWon(false);
     setLevel(getLevelFromScore(saved.score || 0));
+    undoStack.current = [];
     clearSavedBoard();
     setCanContinue(false);
   }, [newGame]);
@@ -189,7 +192,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     saveProfile(p);
   }, []);
 
-  // ─── Power-Ups ──────────────────────────────────────────────────
+  // ─── Power-Ups ──────────────────────────────────────────────────────────────
   const activatePowerUp = useCallback(async (type: PowerUpType): Promise<boolean> => {
     const p = await getProfile();
     if (!p) return false;
@@ -197,15 +200,25 @@ export function GameProvider({ children }: { children: ReactNode }) {
     if (owned <= 0) return false;
 
     if (type === 'undo') {
+      const prev = undoStack.current.pop();
+      if (!prev) return false;
       const updated = await consumePowerUp('undo');
-      if (updated) setProfileState(updated);
-      // Undo: reinit board from saved (simplified — just respawn)
-      const { board: newBoard } = spawnTile(boardRef.current, scoreRef.current, movesRef.current);
-      setBoard(newBoard);
+      if (!updated) return false;
+      setProfileState(updated);
+      // Restore previous board state
+      setBoard(prev.board);
+      boardRef.current = prev.board;
+      setScore(prev.score);
+      scoreRef.current = prev.score;
+      setMoves(prev.moves);
+      movesRef.current = prev.moves;
+      setIsGameOver(false);
+      setLevel(getLevelFromScore(prev.score));
       return true;
     }
 
     if (type === 'destroy') {
+      // consume happens in selectTileToDestroy after user picks a tile
       setIsSelectingDestroy(true);
       return true;
     }
@@ -214,7 +227,39 @@ export function GameProvider({ children }: { children: ReactNode }) {
       const updated = await consumePowerUp('clear_blockers');
       if (!updated) return false;
       setProfileState(updated);
-      setBoard(prev => clearAllBlockers(prev));
+      setBoard(prev => {
+        const cleared = clearAllBlockers(prev);
+        boardRef.current = cleared;
+        return cleared;
+      });
+      return true;
+    }
+
+    if (type === 'shuffle') {
+      const updated = await consumePowerUp('shuffle');
+      if (!updated) return false;
+      setProfileState(updated);
+      setBoard(prev => {
+        // Collect all non-null tiles, shuffle positions
+        const tiles: Tile[] = [];
+        for (let r = 0; r < 4; r++)
+          for (let c = 0; c < 4; c++)
+            if (prev[r][c]) tiles.push(prev[r][c]!);
+        // Fisher-Yates shuffle
+        for (let i = tiles.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [tiles[i], tiles[j]] = [tiles[j], tiles[i]];
+        }
+        const nb: (Tile | null)[][] = Array(4).fill(null).map(() => Array(4).fill(null));
+        let ti = 0;
+        for (let r = 0; r < 4; r++)
+          for (let c = 0; c < 4; c++)
+            if (ti < tiles.length) {
+              nb[r][c] = { ...tiles[ti++], row: r, col: c, isNew: true, isMerged: false };
+            }
+        boardRef.current = nb;
+        return nb;
+      });
       return true;
     }
 
@@ -225,7 +270,11 @@ export function GameProvider({ children }: { children: ReactNode }) {
     if (!isSelectingDestroy) return;
     const updated = await consumePowerUp('destroy');
     if (updated) setProfileState(updated);
-    setBoard(prev => destroyTile(prev, row, col));
+    setBoard(prev => {
+      const nb = destroyTile(prev, row, col);
+      boardRef.current = nb;
+      return nb;
+    });
     setIsSelectingDestroy(false);
   }, [isSelectingDestroy]);
 

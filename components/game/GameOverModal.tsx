@@ -1,7 +1,9 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Animated, Pressable } from 'react-native';
 import { Colors, Radius, Spacing, Typography } from '@/constants/theme';
 import { useGame } from '@/hooks/useGame';
+import { showRewardedAd } from '@/services/monetag';
+import { AdLoadingOverlay } from '@/components/ui/AdLoadingOverlay';
 
 export function GameOverModal() {
   const { isGameOver, isWon, score, sessionTokens, newGame, continueGame, continueFromSaved, canContinue } = useGame();
@@ -9,6 +11,7 @@ export function GameOverModal() {
 
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
   const opacAnim = useRef(new Animated.Value(0)).current;
+  const [watchingAd, setWatchingAd] = useState(false);
 
   useEffect(() => {
     if (visible) {
@@ -16,58 +19,81 @@ export function GameOverModal() {
         Animated.spring(scaleAnim, { toValue: 1, friction: 5, tension: 180, useNativeDriver: true }),
         Animated.timing(opacAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
       ]).start();
+    } else {
+      scaleAnim.setValue(0.8);
+      opacAnim.setValue(0);
     }
   }, [visible]);
+
+  const handleContinueWithAd = async () => {
+    setWatchingAd(true);
+    try {
+      const result = await showRewardedAd();
+      if (result.watched) {
+        continueFromSaved();
+      }
+      // If ad not watched, stay on game over screen
+    } finally {
+      setWatchingAd(false);
+    }
+  };
 
   if (!visible) return null;
 
   return (
-    <Animated.View style={[styles.overlay, { opacity: opacAnim }]}>
-      <Animated.View style={[styles.card, { transform: [{ scale: scaleAnim }] }]}>
-        <Text style={styles.emoji}>{isWon ? '🏆' : '💀'}</Text>
-        <Text style={[styles.title, isWon && styles.winTitle]}>
-          {isWon ? 'YOU HIT 1 BILLION!' : 'GAME OVER'}
-        </Text>
-        <Text style={styles.subtitle}>
-          {isWon ? 'MintGrow Billionaire! Keep going?' : 'Tap below to continue or start fresh'}
-        </Text>
+    <>
+      <Animated.View style={[styles.overlay, { opacity: opacAnim }]}>
+        <Animated.View style={[styles.card, { transform: [{ scale: scaleAnim }] }]}>
+          <Text style={styles.emoji}>{isWon ? '🏆' : '💀'}</Text>
+          <Text style={[styles.title, isWon && styles.winTitle]}>
+            {isWon ? 'YOU HIT 1 BILLION!' : 'GAME OVER'}
+          </Text>
+          <Text style={styles.subtitle}>
+            {isWon ? 'MintGrow Billionaire! Keep going?' : 'Watch an ad to continue or start fresh'}
+          </Text>
 
-        <View style={styles.statsRow}>
-          <View style={styles.statItem}>
-            <Text style={styles.statLabel}>Score</Text>
-            <Text style={styles.statValue}>{score.toLocaleString()}</Text>
+          <View style={styles.statsRow}>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Score</Text>
+              <Text style={styles.statValue}>{score.toLocaleString()}</Text>
+            </View>
+            <View style={styles.divider} />
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>MG Earned</Text>
+              <Text style={[styles.statValue, styles.tokenValue]}>+{sessionTokens.toFixed(2)}</Text>
+            </View>
           </View>
-          <View style={styles.divider} />
-          <View style={styles.statItem}>
-            <Text style={styles.statLabel}>Tokens Earned</Text>
-            <Text style={[styles.statValue, styles.tokenValue]}>+{sessionTokens.toFixed(2)} MG</Text>
-          </View>
-        </View>
 
-        {isWon && (
-          <Pressable style={[styles.btn, styles.continueBtn]} onPress={continueGame}>
-            <Text style={styles.btnTextDark}>Continue →</Text>
+          {isWon && (
+            <Pressable style={[styles.btn, styles.continueBtn]} onPress={continueGame}>
+              <Text style={styles.btnTextLight}>Continue →</Text>
+            </Pressable>
+          )}
+
+          {!isWon && canContinue && (
+            <Pressable
+              style={[styles.btn, styles.resumeBtn]}
+              onPress={handleContinueWithAd}
+              disabled={watchingAd}
+            >
+              <Text style={styles.btnTextLight}>📺 Watch Ad & Continue</Text>
+            </Pressable>
+          )}
+
+          <Pressable style={[styles.btn, styles.newGameBtn]} onPress={newGame}>
+            <Text style={styles.btnTextMuted}>New Game</Text>
           </Pressable>
-        )}
-
-        {!isWon && canContinue && (
-          <Pressable style={[styles.btn, styles.resumeBtn]} onPress={continueFromSaved}>
-            <Text style={styles.btnTextDark}>▶️ Resume (Watch Ad)</Text>
-          </Pressable>
-        )}
-
-        <Pressable style={[styles.btn, styles.newGameBtn]} onPress={newGame}>
-          <Text style={styles.btnTextLight}>New Game</Text>
-        </Pressable>
+        </Animated.View>
       </Animated.View>
-    </Animated.View>
+      <AdLoadingOverlay visible={watchingAd} message="Loading ad to continue..." />
+    </>
   );
 }
 
 const styles = StyleSheet.create({
   overlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(245,251,247,0.92)',
+    backgroundColor: 'rgba(245,251,247,0.93)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: Spacing.lg,
@@ -83,7 +109,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: Colors.borderStrong,
     shadowColor: Colors.primary,
-    shadowOpacity: 0.15,
+    shadowOpacity: 0.18,
     shadowRadius: 20,
     elevation: 12,
   },
@@ -117,6 +143,6 @@ const styles = StyleSheet.create({
   continueBtn: { backgroundColor: Colors.accent },
   resumeBtn: { backgroundColor: Colors.primary },
   newGameBtn: { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: Colors.border },
-  btnTextDark: { ...Typography.bodyBold, color: '#fff' },
-  btnTextLight: { ...Typography.bodyBold, color: Colors.textSecondary },
+  btnTextLight: { ...Typography.bodyBold, color: '#fff' },
+  btnTextMuted: { ...Typography.bodyBold, color: Colors.textSecondary },
 });

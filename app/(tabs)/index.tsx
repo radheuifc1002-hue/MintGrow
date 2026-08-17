@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, Pressable, Alert
+  View, Text, StyleSheet, Pressable, Alert
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
@@ -14,14 +14,17 @@ import { PowerUpBar } from '@/components/game/PowerUpBar';
 import { DailyBonusModal } from '@/components/ui/DailyBonusModal';
 import { NewTileModal } from '@/components/ui/NewTileModal';
 import { AdLoadingOverlay } from '@/components/ui/AdLoadingOverlay';
-import { Colors, Spacing, Typography, Radius, COIN_TILES } from '@/constants/theme';
-import { PowerUpType, POWER_UPS } from '@/types/game';
+import { Colors, Spacing, Typography, Radius } from '@/constants/theme';
+import { PowerUpType } from '@/types/game';
 import { claimDailyBonus, getDailyBonusState, addPowerUp, spendTokensForPowerUp } from '@/services/storage';
-import { showRewardedAd, showInterstitialAd } from '@/services/monetag';
+import { showRewardedAd } from '@/services/monetag';
 
 export default function GameScreen() {
   const insets = useSafeAreaInsets();
-  const { score, bestScore, level, sessionTokens, newGame, profile, refreshProfile, newTierValue, dismissNewTier, activatePowerUp, continueFromSaved, canContinue } = useGame();
+  const {
+    score, bestScore, level, sessionTokens, newGame, profile, refreshProfile,
+    newTierValue, dismissNewTier, activatePowerUp,
+  } = useGame();
 
   const [dailyBonus, setDailyBonus] = useState<{ visible: boolean; tokens: number; streak: number }>({
     visible: false, tokens: 0, streak: 1,
@@ -29,15 +32,12 @@ export default function GameScreen() {
   const [adLoading, setAdLoading] = useState(false);
   const [loadingPowerUp, setLoadingPowerUp] = useState<PowerUpType | null>(null);
 
-  useEffect(() => {
-    checkDailyBonus();
-  }, []);
+  useEffect(() => { checkDailyBonus(); }, []);
 
   const checkDailyBonus = async () => {
     const state = await getDailyBonusState();
     const today = new Date().toDateString();
     if (state.lastClaimDate !== today) {
-      // Show bonus modal — calculate what they'll get
       const streakRewards = [50, 100, 150, 200, 250, 350, 500];
       const yesterday = new Date();
       yesterday.setDate(yesterday.getDate() - 1);
@@ -54,16 +54,14 @@ export default function GameScreen() {
     refreshProfile();
   };
 
-  const handlePowerUpAdWatch = useCallback(async (type: PowerUpType) => {
+  const handlePowerUpPress = useCallback(async (type: PowerUpType) => {
     const owned = profile?.powerUps?.[type] || 0;
     if (owned > 0) {
-      // Use owned power-up
       const ok = await activatePowerUp(type);
-      if (!ok) Alert.alert('Error', 'Could not activate power-up');
+      if (!ok) Alert.alert('Could not activate', 'This power-up could not be used right now.');
       return;
     }
-
-    // Earn new one via ad
+    // Watch ad to earn one and immediately use it
     setLoadingPowerUp(type);
     setAdLoading(true);
     try {
@@ -71,10 +69,10 @@ export default function GameScreen() {
       if (result.watched) {
         const updated = await addPowerUp(type);
         if (updated) refreshProfile();
-        // Immediately activate
-        await activatePowerUp(type);
+        const ok = await activatePowerUp(type);
+        if (!ok) Alert.alert('Error', 'Power-up could not be activated.');
       } else {
-        Alert.alert('Ad Required', 'Please watch the full ad to earn this power-up');
+        Alert.alert('Ad Required', 'Watch the full ad to earn this power-up.');
       }
     } finally {
       setAdLoading(false);
@@ -88,7 +86,7 @@ export default function GameScreen() {
       refreshProfile();
       await activatePowerUp(type);
     } else {
-      Alert.alert('Insufficient Tokens', `You need ${cost} MG to buy this power-up`);
+      Alert.alert('Insufficient Tokens', `You need ${cost} MG to buy this power-up.`);
     }
   }, [activatePowerUp, refreshProfile]);
 
@@ -97,11 +95,7 @@ export default function GameScreen() {
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.logoRow}>
-          <Image
-            source={require('@/assets/images/logo.png')}
-            style={styles.logoImg}
-            contentFit="contain"
-          />
+          <Image source={require('@/assets/images/logo.png')} style={styles.logoImg} contentFit="contain" />
           <View>
             <Text style={styles.logo}>MintGrow</Text>
             <Text style={styles.tagline}>Merge · Earn · Withdraw</Text>
@@ -124,33 +118,13 @@ export default function GameScreen() {
       {/* Level Progress */}
       <LevelProgressBar score={score} level={level} />
 
-      {/* Game Board */}
-      <GameBoard />
+      {/* Game Board — fills remaining space */}
+      <View style={styles.boardWrapper}>
+        <GameBoard />
+      </View>
 
-      {/* Swipe hint */}
-      <Text style={styles.hint}>↑↓←→ Swipe to merge coins · Reach 1 Billion MG!</Text>
-
-      {/* Coin Legend */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.legendScroll}
-        contentContainerStyle={styles.legend}
-      >
-        {COIN_TILES.slice(0, 10).map(coin => (
-          <View key={coin.symbol} style={styles.legendItem}>
-            <Text style={styles.legendEmoji}>{coin.emoji}</Text>
-            <Text style={[styles.legendSymbol, { color: coin.color }]}>{coin.symbol}</Text>
-          </View>
-        ))}
-      </ScrollView>
-
-      {/* Power-Up Bar */}
-      <PowerUpBar
-        onWatchAd={handlePowerUpAdWatch}
-        onSpendTokens={handlePowerUpTokens}
-        loading={loadingPowerUp}
-      />
+      {/* Power-Up Bar — pinned to bottom above tab bar */}
+      <PowerUpBar onWatchAd={handlePowerUpPress} onSpendTokens={handlePowerUpTokens} loading={loadingPowerUp} />
 
       {/* Modals */}
       <GameOverModal />
@@ -171,22 +145,20 @@ function LevelProgressBar({ score, level }: { score: number; level: number }) {
   const thresholds = [0, 500, 1500, 3500, 7500, 15000, 30000, 60000, 120000];
   const curr = thresholds[level - 1] || 0;
   const next = thresholds[level] || curr + 1;
-  const progress = Math.min((score - curr) / (next - curr), 1);
+  const pct = Math.max(Math.min(((score - curr) / (next - curr)) * 100, 100), 2);
 
   return (
     <View style={lStyles.container}>
       <View style={lStyles.bar}>
-        <View style={[lStyles.fill, { width: `${Math.max(progress * 100, 2)}%` }]} />
+        <View style={[lStyles.fill, { width: `${pct}%` }]} />
       </View>
-      <Text style={lStyles.text}>
-        Lv {level} → {level + 1} · {score.toLocaleString()} / {next.toLocaleString()}
-      </Text>
+      <Text style={lStyles.text}>Lv {level} → {level + 1}  ·  {score.toLocaleString()} / {next.toLocaleString()}</Text>
     </View>
   );
 }
 
 const lStyles = StyleSheet.create({
-  container: { paddingHorizontal: Spacing.md, marginBottom: Spacing.sm },
+  container: { paddingHorizontal: Spacing.md, marginBottom: 6 },
   bar: { height: 5, backgroundColor: Colors.bgSurface, borderRadius: 4, overflow: 'hidden', marginBottom: 3, borderWidth: 1, borderColor: Colors.border },
   fill: { height: '100%', backgroundColor: Colors.primary, borderRadius: 4 },
   text: { ...Typography.caption, color: Colors.textMuted, textAlign: 'center' },
@@ -195,41 +167,29 @@ const lStyles = StyleSheet.create({
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-    backgroundColor: Colors.bgCard,
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
+    borderBottomWidth: 1, borderBottomColor: Colors.border, backgroundColor: Colors.bgCard,
   },
   logoRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   logoImg: { width: 36, height: 36, borderRadius: 8 },
   logo: { fontSize: 18, fontWeight: '800', color: Colors.primary },
   tagline: { ...Typography.caption, color: Colors.textMuted },
   newGameBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.bgSurface,
-    borderRadius: Radius.full,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderWidth: 1.5,
-    borderColor: Colors.primary,
-    gap: 4,
+    flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.bgSurface,
+    borderRadius: Radius.full, paddingVertical: 8, paddingHorizontal: 14,
+    borderWidth: 1.5, borderColor: Colors.primary, gap: 4,
   },
   newGameText: { ...Typography.smallBold, color: Colors.primary },
   scoreRow: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
+    flexDirection: 'row', gap: Spacing.sm,
+    paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
   },
-  hint: { ...Typography.caption, color: Colors.textMuted, textAlign: 'center', paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs },
-  legendScroll: { flexGrow: 0 },
-  legend: { paddingHorizontal: Spacing.md, paddingVertical: 4, gap: Spacing.md },
-  legendItem: { alignItems: 'center', gap: 1 },
-  legendEmoji: { fontSize: 16 },
-  legendSymbol: { fontSize: 8, fontWeight: '700', letterSpacing: 0.3 },
+  boardWrapper: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.md,
+    paddingBottom: 8,
+  },
 });
