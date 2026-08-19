@@ -91,8 +91,11 @@ app.get('/health', (req, res) => {
 // ─── Main webhook handler ────────────────────────────────────────────────────
 
 app.post('/webhook', async (req, res) => {
-  res.json({ ok: true }); // Respond immediately to Telegram
+  
+console.log('🔥 TELEGRAM WEBHOOK RECEIVED');
+  console.log('Update:', JSON.stringify(req.body));
 
+  res.status(200).json({ ok: true });
   try {
     const update = req.body;
     const message = update.message || update.edited_message;
