@@ -8,9 +8,7 @@
  *   SUPABASE_SERVICE_ROLE_KEY
  *   MINI_APP_URL - the HTTPS URL of the deployed Expo web Mini App
  * Optional:
- *   BOT_USERNAME - used for referral links (default: MintGrowBot)
- *   PORT - set by Railway automatically
- */
+
 
 const http = require('http');
 const { createClient } = require('@supabase/supabase-js');
@@ -19,9 +17,6 @@ const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const MINI_APP_URL = process.env.MINI_APP_URL || '';
-const BOT_USERNAME = process.env.BOT_USERNAME || 'MintGrowBot';
-const PORT = Number(process.env.PORT || 3000);
-
 const supabase = SUPABASE_URL && SUPABASE_SERVICE_KEY
   ? createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
   : null;

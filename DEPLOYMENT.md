@@ -3,7 +3,7 @@
 ## 1. Telegram Bot Setup (via @BotFather)
 
 1. Open [@BotFather](https://t.me/BotFather) on Telegram
-2. Send `/newbot` → choose name `MintGrow` → username e.g. `MintGrowBot`
+2. Send `/newbot` → choose name `MintGrow` → username e.g. `MINTGROW_BOT`
 3. Copy the **Bot Token**
 4. Send `/newapp` → attach your Mini App URL (after Railway deploy)
 5. Set bot commands:
@@ -25,8 +25,7 @@
    TELEGRAM_BOT_TOKEN=<from BotFather>
    SUPABASE_URL=<your Supabase URL>
    SUPABASE_SERVICE_ROLE_KEY=<your service role key>
-   MINI_APP_URL=https://your-expo-web-domain.example.com
-   BOT_USERNAME=MintGrowBot
+   MINI_APP_URL=https://your-expo-web-domain.example.co
    ```
 5. Railway auto-deploys and gives you a public URL like `https://mintgrow-bot.up.railway.app`
 
@@ -63,12 +62,9 @@ Deploy the generated web output to a static host (Railway static service, Vercel
 
 In @BotFather:
 ```
-/newapp → select MintGrowBot → set title "MintGrow"
-→ App URL: your deployed Expo web URL (the same URL as MINI_APP_URL)
-→ Short name: app
-```
 
-Users can then open via: `https://t.me/MintGrowBot/app`
+
+Users can then open via: `https://t.me/MINTGROW_BOT/app`
 
 ## Architecture
 
