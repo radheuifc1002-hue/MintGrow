@@ -28,16 +28,31 @@ const PORT = process.env.PORT || 3000;
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
 // ─── Telegram API helpers ────────────────────────────────────────────────────
-
 async function sendMessage(chatId, text, extra = {}) {
   const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
+
+  console.log('📤 Sending Telegram message to:', chatId);
+
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML', ...extra }),
+    body: JSON.stringify({
+      chat_id: chatId,
+      text,
+      parse_mode: 'HTML',
+      ...extra,
+    }),
   });
-  return res.json();
+
+  const data = await res.json();
+
+  console.log('📨 Telegram response:', JSON.stringify(data));
+
+  return data;
 }
+
+
+
 
 async function answerCallbackQuery(id) {
   await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
