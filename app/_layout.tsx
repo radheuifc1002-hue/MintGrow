@@ -4,12 +4,14 @@ import { StatusBar } from 'expo-status-bar';
 import { GameProvider } from '@/contexts/GameContext';
 import { MonetazAdWebView } from '@/components/ui/MonetazAdWebView';
 import { RegistrationGate } from '@/components/ui/RegistrationGate';
+import { TelegramMiniAppBridge } from '@/components/ui/TelegramMiniAppBridge';
 
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <GameProvider>
         <StatusBar style="dark" />
+        <TelegramMiniAppBridge />
         {/* Global Monetag WebView bridge — must be inside GameProvider */}
         <MonetazAdWebView />
         {/* Registration ad gate — shows once for new users */}
