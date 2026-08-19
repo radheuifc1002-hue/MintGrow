@@ -65,7 +65,7 @@ async function getPlayer(telegramId) {
 // ─── Register webhook setup endpoint ────────────────────────────────────────
 
 app.get('/setup-webhook', async (req, res) => {
-  const webhookUrl = `${req.protocol}://${req.get('host')}/webhook`;
+  const webhookUrl = `https://${req.get('host')}/webhook`;
   const response = await fetch(
     `https://api.telegram.org/bot${BOT_TOKEN}/setWebhook`,
     {
