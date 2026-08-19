@@ -2,7 +2,7 @@
 # This Dockerfile serves the Telegram bot webhook via a lightweight Node.js server
 # The Expo app itself is deployed separately (Expo Go / EAS Build)
 
-FROM node:20-alpine
+FROM node:22-alpine
 
 WORKDIR /app
 
