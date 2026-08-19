@@ -68,7 +68,7 @@ async function getPlayer(telegramId) {
 
   return data;
 }
-}
+
 
 // ─── Register webhook setup endpoint ────────────────────────────────────────
 
