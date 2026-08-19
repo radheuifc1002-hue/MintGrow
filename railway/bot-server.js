@@ -54,12 +54,20 @@ function generateReferralCode(telegramId) {
 }
 
 async function getPlayer(telegramId) {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('players')
     .select('*')
     .eq('telegram_id', String(telegramId))
-    .single();
+    .maybeSingle();
+
+  if (error) {
+    console.error('❌ Supabase getPlayer error:', error);
+  }
+
+  console.log('👤 Player lookup:', data ? 'FOUND' : 'NOT FOUND');
+
   return data;
+}
 }
 
 // ─── Register webhook setup endpoint ────────────────────────────────────────
