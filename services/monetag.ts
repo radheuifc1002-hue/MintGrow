@@ -51,14 +51,127 @@ export const getMonetazConfig = async (): Promise<{
   }
 };
 
+async function showMonetagInTelegramWeb(): Promise<AdResult> {
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    return { watched: false, error: 'Browser runtime is unavailable' };
+  }
+
+  const config = await getMonetazConfig();
+  const zoneId = config?.zoneId;
+
+  return new Promise((resolve) => {
+    const allowDevReward = process.env.NODE_ENV !== 'production';
+    let done = false;
+    let countdownTimer: ReturnType<typeof setInterval> | null = null;
+    let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const finish = (result: AdResult) => {
+      if (done) return;
+      done = true;
+      if (countdownTimer) clearInterval(countdownTimer);
+      if (fallbackTimer) clearTimeout(fallbackTimer);
+      const overlay = document.getElementById('mintgrow-monetag-overlay');
+      overlay?.remove();
+      resolve(result);
+    };
+
+    const overlay = document.createElement('div');
+    overlay.id = 'mintgrow-monetag-overlay';
+    overlay.style.cssText = [
+      'position:fixed', 'inset:0', 'z-index:2147483647', 'background:#0A2E1F',
+      'display:flex', 'align-items:center', 'justify-content:center', 'color:#fff',
+      'font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif', 'text-align:center',
+      'padding:24px',
+    ].join(';');
+    overlay.innerHTML = '<div><div style="font-size:40px;margin-bottom:12px">🌿</div><h2 style="margin:0 0 8px;font-size:22px">MintGrow Ad</h2><p id="mintgrow-ad-status" style="margin:0;color:#7DA890">Preparing Telegram ad...</p></div>';
+    document.body.appendChild(overlay);
+
+    const status = document.getElementById('mintgrow-ad-status');
+    const setStatus = (text: string) => {
+      if (status) status.textContent = text;
+    };
+
+    const finishUnavailable = (error: string) => {
+      if (!allowDevReward) {
+        setStatus(error);
+        setTimeout(() => finish({ watched: false, error }), 1200);
+        return;
+      }
+
+      let seconds = 6;
+      setStatus(`Ad unavailable in preview. Test reward unlocks in ${seconds}s...`);
+      countdownTimer = setInterval(() => {
+        seconds -= 1;
+        if (seconds <= 0) {
+          finish({ watched: true });
+        } else {
+          setStatus(`Ad unavailable in preview. Test reward unlocks in ${seconds}s...`);
+        }
+      }, 1000);
+    };
+
+    const tryShowAd = () => {
+      const showFn = zoneId ? (window as unknown as Record<string, unknown>)[`show_${zoneId}`] : undefined;
+      if (typeof showFn !== 'function') return false;
+
+      setStatus('Showing Telegram Mini App ad...');
+      Promise.resolve((showFn as () => Promise<void>)())
+        .then(() => finish({ watched: true }))
+        .catch(() => finish({ watched: false, error: 'Ad was closed before completion' }));
+      return true;
+    };
+
+    const tg = (window as unknown as { Telegram?: { WebApp?: { ready?: () => void; expand?: () => void } } }).Telegram?.WebApp;
+    tg?.ready?.();
+    tg?.expand?.();
+
+    if (!zoneId) {
+      finishUnavailable('Monetag zone is not configured.');
+      return;
+    }
+
+    if (tryShowAd()) return;
+
+    const existing = document.querySelector(`script[data-mintgrow-monetag-zone="${zoneId}"]`);
+    const script = existing || document.createElement('script');
+    script.setAttribute('data-zone', zoneId);
+    script.setAttribute('data-mintgrow-monetag-zone', zoneId);
+    script.setAttribute('async', 'true');
+    script.setAttribute('src', config?.scriptUrl || 'https://niphausten.com/1/tag.min.js');
+
+    script.addEventListener('load', () => {
+      setStatus('Loading ad creative...');
+      let attempts = 0;
+      const poll = setInterval(() => {
+        attempts += 1;
+        if (tryShowAd()) {
+          clearInterval(poll);
+        } else if (attempts > 20) {
+          clearInterval(poll);
+          finishUnavailable('Monetag SDK did not expose an ad for this zone.');
+        }
+      }, 250);
+    }, { once: true });
+    script.addEventListener('error', () => finishUnavailable('Monetag SDK failed to load.'), { once: true });
+
+    if (!existing) document.head.appendChild(script);
+    fallbackTimer = setTimeout(() => {
+      if (!done && !tryShowAd()) finishUnavailable('Monetag SDK timed out.');
+    }, 7000);
+  });
+}
+
 export const showRewardedAd = (): Promise<AdResult> => {
+  if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+    return showMonetagInTelegramWeb();
+  }
+
   return new Promise((resolve) => {
     if (_showAdTrigger) {
       _resolveAd = resolve;
       _showAdTrigger();
     } else {
-      // Fallback simulation when WebView not mounted
-      setTimeout(() => resolve({ watched: true }), 2500);
+      setTimeout(() => resolve({ watched: false, error: 'Ad bridge is unavailable' }), 2500);
     }
   });
 };
