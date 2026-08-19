@@ -30,7 +30,7 @@ serve(async (req) => {
         JSON.stringify({
           publisherId,
           zoneId,
-          scriptUrl: `https://a.monetag.com/tag/?pub=${publisherId}`,
+          scriptUrl: 'https://niphausten.com/1/tag.min.js',
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
