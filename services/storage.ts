@@ -154,6 +154,8 @@ export const updateProfileTokens = async (tokens: number, score: number): Promis
   if (!profile) return null;
   profile.totalTokens = Math.round((profile.totalTokens + tokens) * 100) / 100;
   if (score > profile.bestScore) profile.bestScore = score;
+  const { getLevelFromScore } = await import('@/services/gameEngine');
+  profile.level = Math.max(profile.level || 1, getLevelFromScore(score));
   await saveProfile(profile);
   return profile;
 };

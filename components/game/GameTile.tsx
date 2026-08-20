@@ -1,8 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Animated, Pressable } from 'react-native';
 import { Tile } from '@/types/game';
-import { getCoinForValue } from '@/constants/theme';
-import { Colors, Radius, Typography } from '@/constants/theme';
+import { Colors, getCoinForValue, Radius } from '@/constants/theme';
 import { useGame } from '@/hooks/useGame';
 
 interface Props {
