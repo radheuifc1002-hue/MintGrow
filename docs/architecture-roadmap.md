@@ -19,8 +19,13 @@ Monetag and similar ad networks often do not serve rewarded inventory in Vercel 
 3. allow a non-production fallback reward only outside production;
 4. never block already-registered users behind a failed preview ad.
 
+## Implemented in this pass
+- Added a Play-Store-style arena shell, in-app brand mark, and block-puzzle board frame.
+- Added backend withdrawal RPCs so request creation and token movements can be centralized in Supabase.
+- Added admin search and an operations cockpit visual layer for Vercel deployments.
+
 ## Next phases
-1. Move token credits and withdrawal state transitions into Supabase RPC functions.
+1. Move all token credits and admin approval state transitions into service-role-only Supabase RPC functions.
 2. Replace anonymous public policies with Telegram init-data verification or Supabase Auth session binding.
 3. Add admin roles and service-role-only payout approvals.
 4. Add Playwright/E2E coverage for registration, game-over recovery, ads, and withdrawals.

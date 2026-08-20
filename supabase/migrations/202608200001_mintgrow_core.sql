@@ -52,7 +52,7 @@ create table if not exists public.ad_events (
 );
 
 create table if not exists public.withdrawals (
-  id uuid primary key default gen_random_uuid(),
+  id text primary key,
   telegram_id text not null references public.players(telegram_id) on delete cascade,
   username text not null,
   amount numeric(18,2) not null check (amount > 0),
@@ -111,3 +111,76 @@ create index if not exists players_referral_code_idx on public.players(referral_
 create index if not exists game_sessions_telegram_idx on public.game_sessions(telegram_id, started_at desc);
 create index if not exists withdrawals_status_idx on public.withdrawals(status, created_at desc);
 create index if not exists ad_events_telegram_idx on public.ad_events(telegram_id, created_at desc);
+
+create or replace function public.credit_player_tokens(
+  p_telegram_id text,
+  p_amount numeric,
+  p_best_score integer default null,
+  p_level integer default null
+)
+returns public.players
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  updated_player public.players;
+begin
+  if p_amount <= 0 then
+    raise exception 'Token credit amount must be positive';
+  end if;
+
+  update public.players
+  set total_tokens = round(total_tokens + p_amount, 2),
+      best_score = greatest(best_score, coalesce(p_best_score, best_score)),
+      level = greatest(level, coalesce(p_level, level))
+  where telegram_id = p_telegram_id
+  returning * into updated_player;
+
+  if updated_player.telegram_id is null then
+    raise exception 'Player % not found', p_telegram_id;
+  end if;
+
+  return updated_player;
+end;
+$$;
+
+create or replace function public.submit_withdrawal_request(
+  p_id text,
+  p_telegram_id text,
+  p_username text,
+  p_amount numeric,
+  p_wallet_address text,
+  p_network text
+)
+returns public.withdrawals
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  created_withdrawal public.withdrawals;
+  updated_telegram_id text;
+begin
+  if p_amount <= 0 then
+    raise exception 'Withdrawal amount must be positive';
+  end if;
+
+  update public.players
+  set total_tokens = round(total_tokens - p_amount, 2),
+      pending_tokens = round(pending_tokens + p_amount, 2)
+  where telegram_id = p_telegram_id
+    and total_tokens >= p_amount
+  returning telegram_id into updated_telegram_id;
+
+  if updated_telegram_id is null then
+    raise exception 'Insufficient balance or missing player';
+  end if;
+
+  insert into public.withdrawals(id, telegram_id, username, amount, wallet_address, network, status)
+  values (p_id, p_telegram_id, p_username, p_amount, p_wallet_address, p_network, 'pending')
+  returning * into created_withdrawal;
+
+  return created_withdrawal;
+end;
+$$;

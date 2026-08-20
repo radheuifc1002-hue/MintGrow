@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, Pressable, Alert
+  View, Text, StyleSheet, Pressable, Alert, ScrollView
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useGame } from '@/hooks/useGame';
 import { GameBoard } from '@/components/game/GameBoard';
@@ -15,6 +15,7 @@ import { DailyBonusModal } from '@/components/ui/DailyBonusModal';
 import { NewTileModal } from '@/components/ui/NewTileModal';
 import { AdLoadingOverlay } from '@/components/ui/AdLoadingOverlay';
 import { Colors, Spacing, Typography, Radius } from '@/constants/theme';
+import { BrandMark } from '@/components/ui/BrandMark';
 import { PowerUpType } from '@/types/game';
 import { claimDailyBonus, getDailyBonusState, addPowerUp, spendTokensForPowerUp } from '@/services/storage';
 import { showRewardedAd } from '@/services/monetag';
@@ -91,39 +92,53 @@ export default function GameScreen() {
   }, [activatePowerUp, refreshProfile]);
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.logoRow}>
-          <Image source={require('@/assets/images/logo.png')} style={styles.logoImg} contentFit="contain" />
-          <View>
-            <Text style={styles.logo}>MintGrow</Text>
-            <Text style={styles.tagline}>Merge · Earn · Withdraw</Text>
+    <LinearGradient colors={['#06251A', '#0B3D2B', '#F4FFF8']} style={[styles.container, { paddingTop: insets.top }]}>
+      <ScrollView contentContainerStyle={styles.playfield} showsVerticalScrollIndicator={false}>
+        <View style={styles.hero}>
+          <View style={styles.logoRow}>
+            <BrandMark size={52} />
+            <View>
+              <Text style={styles.logo}>MintGrow</Text>
+              <Text style={styles.tagline}>Block Puzzle Arena</Text>
+            </View>
+          </View>
+          <Pressable style={styles.newGameBtn} onPress={newGame} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <MaterialIcons name="refresh" size={16} color="#06251A" />
+            <Text style={styles.newGameText}>Restart</Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.arenaCard}>
+          <View style={styles.stageHeader}>
+            <View>
+              <Text style={styles.stageLabel}>Season 01</Text>
+              <Text style={styles.stageTitle}>Crypto Merge Run</Text>
+            </View>
+            <View style={styles.levelPill}>
+              <Text style={styles.levelPillText}>LV {level}</Text>
+            </View>
+          </View>
+
+          <View style={styles.scoreRow}>
+            <ScoreCard label="Score" value={score.toLocaleString()} />
+            <ScoreCard label="Best" value={bestScore.toLocaleString()} />
+            <ScoreCard label="Earned" value={`+${sessionTokens.toFixed(0)}`} accent />
+          </View>
+
+          <LevelProgressBar score={score} level={level} />
+
+          <View style={styles.boardWrapper}>
+            <GameBoard />
           </View>
         </View>
-        <Pressable style={styles.newGameBtn} onPress={newGame} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <MaterialIcons name="refresh" size={15} color={Colors.primary} />
-          <Text style={styles.newGameText}>New</Text>
-        </Pressable>
-      </View>
 
-      {/* Score Row */}
-      <View style={styles.scoreRow}>
-        <ScoreCard label="Score" value={score.toLocaleString()} />
-        <ScoreCard label="Best" value={bestScore.toLocaleString()} />
-        <ScoreCard label="Level" value={`L${level}`} accent />
-        <ScoreCard label="Session" value={`+${sessionTokens.toFixed(0)} MG`} accent />
-      </View>
+        <View style={styles.missionStrip}>
+          <View style={styles.missionItem}><Text style={styles.missionIcon}>🎯</Text><Text style={styles.missionText}>Merge higher coins</Text></View>
+          <View style={styles.missionItem}><Text style={styles.missionIcon}>🎲</Text><Text style={styles.missionText}>Random MG rewards</Text></View>
+          <View style={styles.missionItem}><Text style={styles.missionIcon}>🏦</Text><Text style={styles.missionText}>Withdraw BEP-20</Text></View>
+        </View>
+      </ScrollView>
 
-      {/* Level Progress */}
-      <LevelProgressBar score={score} level={level} />
-
-      {/* Game Board — fills remaining space */}
-      <View style={styles.boardWrapper}>
-        <GameBoard />
-      </View>
-
-      {/* Power-Up Bar — pinned to bottom above tab bar */}
       <PowerUpBar onWatchAd={handlePowerUpPress} onSpendTokens={handlePowerUpTokens} loading={loadingPowerUp} />
 
       {/* Modals */}
@@ -137,7 +152,7 @@ export default function GameScreen() {
         onClaim={handleClaimBonus}
       />
       <AdLoadingOverlay visible={adLoading} message="Earning your power-up..." />
-    </View>
+    </LinearGradient>
   );
 }
 
@@ -165,31 +180,35 @@ const lStyles = StyleSheet.create({
 });
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.bg },
-  header: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
-    borderBottomWidth: 1, borderBottomColor: Colors.border, backgroundColor: Colors.bgCard,
-  },
+  container: { flex: 1 },
+  playfield: { padding: Spacing.md, paddingBottom: Spacing.lg, gap: Spacing.md },
+  hero: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: Spacing.sm },
   logoRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-  logoImg: { width: 36, height: 36, borderRadius: 8 },
-  logo: { fontSize: 18, fontWeight: '800', color: Colors.primary },
-  tagline: { ...Typography.caption, color: Colors.textMuted },
+  logo: { fontSize: 24, fontWeight: '900', color: '#FFFFFF', letterSpacing: 0.4 },
+  tagline: { ...Typography.caption, color: '#B7F7D7', textTransform: 'uppercase', letterSpacing: 1.4 },
   newGameBtn: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.bgSurface,
-    borderRadius: Radius.full, paddingVertical: 8, paddingHorizontal: 14,
-    borderWidth: 1.5, borderColor: Colors.primary, gap: 4,
+    flexDirection: 'row', alignItems: 'center', backgroundColor: '#B8FFD9',
+    borderRadius: Radius.full, paddingVertical: 10, paddingHorizontal: 14, gap: 5,
+    shadowColor: '#000', shadowOpacity: 0.22, shadowRadius: 10, elevation: 6,
   },
-  newGameText: { ...Typography.smallBold, color: Colors.primary },
-  scoreRow: {
-    flexDirection: 'row', gap: Spacing.sm,
-    paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
+  newGameText: { ...Typography.smallBold, color: '#06251A' },
+  arenaCard: {
+    backgroundColor: 'rgba(255,255,255,0.96)', borderRadius: 28, padding: Spacing.md,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.8)', shadowColor: '#00180F',
+    shadowOpacity: 0.24, shadowRadius: 22, shadowOffset: { width: 0, height: 14 }, elevation: 10,
   },
-  boardWrapper: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.md,
-    paddingBottom: 8,
+  stageHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.sm },
+  stageLabel: { ...Typography.caption, color: Colors.primary, letterSpacing: 1.6, textTransform: 'uppercase' },
+  stageTitle: { fontSize: 20, fontWeight: '900', color: Colors.textPrimary },
+  levelPill: { backgroundColor: Colors.primary, paddingHorizontal: 12, paddingVertical: 8, borderRadius: Radius.full },
+  levelPillText: { ...Typography.smallBold, color: '#fff' },
+  scoreRow: { flexDirection: 'row', gap: Spacing.sm, paddingVertical: Spacing.sm },
+  boardWrapper: { justifyContent: 'center', alignItems: 'center', paddingVertical: Spacing.md },
+  missionStrip: {
+    flexDirection: 'row', gap: Spacing.sm, backgroundColor: 'rgba(6,37,26,0.9)',
+    borderRadius: Radius.xl, padding: Spacing.sm, borderWidth: 1, borderColor: 'rgba(184,255,217,0.25)',
   },
+  missionItem: { flex: 1, alignItems: 'center', gap: 3 },
+  missionIcon: { fontSize: 18 },
+  missionText: { ...Typography.caption, color: '#DFFFF0', textAlign: 'center' },
 });
