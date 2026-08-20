@@ -9,13 +9,14 @@ const GAP = 8;
 
 function getBoardMetrics() {
   const { width, height } = Dimensions.get('window');
-  // Use the smaller dimension to keep board square and fitting
-  const maxFromWidth = width - 32;
-  const maxFromHeight = height * 0.48;
-  const boardW = Math.min(maxFromWidth, maxFromHeight, 380);
+  const maxFromWidth = Math.max(260, width - 48);
+  // Keep the board compact enough to stay inside Telegram's WebView viewport.
+  // The page itself is no longer expected to scroll while swiping the board.
+  const maxFromHeight = Math.max(260, Math.min(height * 0.44, 380));
+  const boardW = Math.min(maxFromWidth, maxFromHeight, 360);
   const tileSize = Math.floor((boardW - GAP * (BOARD_SIZE + 1)) / BOARD_SIZE);
   const boardDim = tileSize * BOARD_SIZE + GAP * (BOARD_SIZE + 1);
-  return { tileSize: Math.max(tileSize, 60), boardDim };
+  return { tileSize: Math.max(tileSize, 52), boardDim };
 }
 
 export function GameBoard() {
@@ -43,39 +44,33 @@ export function GameBoard() {
   ).current;
 
   return (
-    <View style={styles.frame}>
-      <View style={styles.topRail}>
+    <View style={styles.frame} {...panResponder.panHandlers}>
+      <View style={styles.topRail} pointerEvents="none">
         <Text style={styles.railText}>Swipe to merge</Text>
         <View style={styles.liveDot} />
       </View>
-      <View
-        style={[styles.container, { width: boardDim, height: boardDim }]}
-        {...panResponder.panHandlers}
-      >
-      {/* Empty cells */}
-      {Array(BOARD_SIZE).fill(null).map((_, r) =>
-        Array(BOARD_SIZE).fill(null).map((_, c) => (
-          <View
-            key={`e_${r}_${c}`}
-            style={[
-              styles.emptyCell,
-              {
-                width: tileSize,
-                height: tileSize,
-                left: GAP + c * (tileSize + GAP),
-                top: GAP + r * (tileSize + GAP),
-              },
-            ]}
-          />
-        ))
-      )}
-
-      {/* Tiles */}
-      {board.map(row =>
-        row.map(tile =>
-          tile ? <GameTile key={tile.id} tile={tile} tileSize={tileSize} gap={GAP} /> : null
-        )
-      )}
+      <View style={[styles.container, { width: boardDim, height: boardDim }]} pointerEvents="box-only">
+        {Array(BOARD_SIZE).fill(null).map((_, r) =>
+          Array(BOARD_SIZE).fill(null).map((_, c) => (
+            <View
+              key={`e_${r}_${c}`}
+              style={[
+                styles.emptyCell,
+                {
+                  width: tileSize,
+                  height: tileSize,
+                  left: GAP + c * (tileSize + GAP),
+                  top: GAP + r * (tileSize + GAP),
+                },
+              ]}
+            />
+          ))
+        )}
+        {board.map(row =>
+          row.map(tile =>
+            tile ? <GameTile key={tile.id} tile={tile} tileSize={tileSize} gap={GAP} /> : null
+          )
+        )}
       </View>
     </View>
   );
