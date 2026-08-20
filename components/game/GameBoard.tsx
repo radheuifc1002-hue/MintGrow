@@ -8,9 +8,11 @@ const BOARD_SIZE = 4;
 const GAP = 8;
 
 function getBoardMetrics(width: number, height: number) {
-  const maxFromWidth = Math.max(240, width - 40);
-  const maxFromHeight = Math.max(220, Math.min(height * 0.34, 300));
-  const boardW = Math.min(maxFromWidth, maxFromHeight, 300);
+  // The previous height calculation could make the board larger than the
+  // available boardWrapper, which clipped the top/bottom in Telegram.
+  // Width is the reliable constraint for a square 4x4 board.
+  const availableWidth = Math.max(240, width - 32);
+  const boardW = Math.min(availableWidth, 300);
   const tileSize = Math.max(Math.floor((boardW - GAP * (BOARD_SIZE + 1)) / BOARD_SIZE), 48);
   return { tileSize, boardDim: tileSize * BOARD_SIZE + GAP * (BOARD_SIZE + 1) };
 }
@@ -36,7 +38,7 @@ export function GameBoard() {
   return (
     <View style={styles.frame}>
       <View style={styles.topRail} pointerEvents="none">
-        <Text style={styles.railText}>Swipe to merge</Text>
+        <Text style={styles.railText}>SWIPE TO MERGE</Text>
         <View style={styles.liveDot} />
       </View>
       <View
