@@ -5,14 +5,14 @@ import { GameTile } from './GameTile';
 import { Colors, Radius, Spacing, Typography } from '@/constants/theme';
 
 const BOARD_SIZE = 4;
-const GAP = 8;
+const GAP = 7;
 
 function getBoardMetrics(width: number, height: number) {
-  // The previous height calculation could make the board larger than the
-  // available boardWrapper, which clipped the top/bottom in Telegram.
-  // Width is the reliable constraint for a square 4x4 board.
-  const availableWidth = Math.max(240, width - 32);
-  const boardW = Math.min(availableWidth, 300);
+  // Keep the board square and constrain it by BOTH dimensions. Telegram Mini
+  // Apps can have a short WebView, so width-only sizing can clip vertically.
+  const availableWidth = Math.max(220, width - 42);
+  const availableHeight = Math.max(220, height * 0.36);
+  const boardW = Math.min(availableWidth, availableHeight, 300);
   const tileSize = Math.max(Math.floor((boardW - GAP * (BOARD_SIZE + 1)) / BOARD_SIZE), 48);
   return { tileSize, boardDim: tileSize * BOARD_SIZE + GAP * (BOARD_SIZE + 1) };
 }
@@ -60,10 +60,24 @@ export function GameBoard() {
 }
 
 const styles = StyleSheet.create({
-  frame: { backgroundColor: '#09291D', borderRadius: Radius.xl, padding: Spacing.sm, borderWidth: 2, borderColor: '#1DE89B', shadowColor: Colors.primary, shadowOpacity: 0.24, shadowRadius: 18, elevation: 10, alignSelf: 'center' },
-  topRail: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: Spacing.sm, paddingBottom: Spacing.sm },
-  railText: { ...Typography.caption, color: '#B8FFD9', letterSpacing: 1.2, textTransform: 'uppercase' },
-  liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#23F0A7' },
-  container: { backgroundColor: '#103D2C', borderRadius: Radius.lg, position: 'relative', borderWidth: 1.5, borderColor: 'rgba(184,255,217,0.35)', shadowColor: Colors.primary, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4 },
-  emptyCell: { position: 'absolute', backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: Radius.sm, borderWidth: 1, borderColor: 'rgba(184,255,217,0.18)' },
+  frame: {
+    backgroundColor: '#09291D', borderRadius: Radius.xl, padding: 7,
+    borderWidth: 2, borderColor: '#1DE89B', shadowColor: Colors.primary,
+    shadowOpacity: 0.24, shadowRadius: 18, elevation: 10, alignSelf: 'center',
+  },
+  topRail: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: 5, paddingBottom: 6,
+  },
+  railText: { ...Typography.caption, color: '#B8FFD9', letterSpacing: 1.1, textTransform: 'uppercase' },
+  liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#23F0A7' },
+  container: {
+    backgroundColor: '#103D2C', borderRadius: Radius.lg, position: 'relative',
+    borderWidth: 1.5, borderColor: 'rgba(184,255,217,0.35)',
+    shadowColor: Colors.primary, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4,
+  },
+  emptyCell: {
+    position: 'absolute', backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: Radius.sm, borderWidth: 1, borderColor: 'rgba(184,255,217,0.18)',
+  },
 });
