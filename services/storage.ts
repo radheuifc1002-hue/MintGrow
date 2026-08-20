@@ -112,12 +112,18 @@ export const syncProfileFromSupabase = async (telegramId: string): Promise<Playe
 };
 
 export const saveProfile = async (profile: PlayerProfile): Promise<void> => {
+  await AsyncStorage.setItem(KEYS.PROFILE, JSON.stringify(profile));
+
+  // Keep the remote player row in sync when Supabase is available, but never
+  // roll back a successful local save because the user may be temporarily
+  // offline inside the Telegram in-app browser.
   try {
-    await AsyncStorage.setItem(KEYS.PROFILE, JSON.stringify(profile));
-    // Upsert to Supabase
     const row = profileToRow(profile);
-    await supabase.from('players').upsert(row, { onConflict: 'telegram_id' });
-  } catch {}
+    const { error } = await supabase.from('players').upsert(row, { onConflict: 'telegram_id' });
+    if (error) console.error('Failed to sync profile to Supabase:', error.message);
+  } catch (error) {
+    console.error('Failed to sync profile to Supabase:', error);
+  }
 };
 
 export const initOrLoadProfile = async (telegramId: string, username: string, avatarUrl?: string): Promise<PlayerProfile> => {
