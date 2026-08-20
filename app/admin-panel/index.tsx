@@ -1,490 +1,121 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  ActivityIndicator, Alert, Modal, Platform, Pressable, ScrollView,
-  StyleSheet, Text, TextInput, View,
-} from 'react-native';
+import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { Colors, Radius, Spacing, Typography } from '@/constants/theme';
+import { Colors, Radius, Spacing } from '@/constants/theme';
 import { supabase } from '@/services/supabase';
-import { getWithdrawals, updateWithdrawal } from '@/services/storage';
 import { TOKEN_NETWORK, WithdrawalRequest } from '@/types/game';
 
-type AdminTab = 'overview' | 'users' | 'withdrawals' | 'games';
-type WithdrawalStep = 'review' | 'wallet' | 'signature' | 'txn' | 'complete';
-
-type AdminPlayer = {
-  telegramId: string;
-  username: string;
-  walletAddress: string;
-  totalTokens: number;
-  pendingTokens: number;
-  withdrawnTokens: number;
-  adsWatched: number;
-  gamesPlayed: number;
-  bestScore: number;
-  level: number;
-  referralCount: number;
-  createdAt?: string;
-};
-
-type AdminStats = {
-  totalUsers: number;
-  totalTokens: number;
-  pendingTokens: number;
-  withdrawnTokens: number;
-  totalAds: number;
-  totalGames: number;
-  pendingWithdrawals: number;
-};
-
-type EthersLike = {
-  BrowserProvider: new (ethereum: unknown) => {
-    getSigner: () => Promise<{
-      getAddress: () => Promise<string>;
-      signMessage: (message: string) => Promise<string>;
-    }>;
-    getTransactionReceipt: (hash: string) => Promise<unknown | null>;
-  };
-};
-
-declare global {
-  interface Window {
-    ethereum?: { request?: (args: { method: string; params?: unknown[] }) => Promise<unknown> };
-    ethers?: EthersLike;
-  }
-}
-
-const ADMIN_EMAIL = process.env.EXPO_PUBLIC_ADMIN_EMAIL || 'radheuifc100.3@gmail.com';
-const ADMIN_PASSWORD = process.env.EXPO_PUBLIC_ADMIN_PASSWORD || process.env.ADMIN_PASSWORD || '';
-const ETHERS_SCRIPT_ID = 'mintgrow-admin-ethers';
-
-const loadEthers = (): Promise<EthersLike> => {
-  if (Platform.OS !== 'web' || typeof window === 'undefined' || typeof document === 'undefined') {
-    return Promise.reject(new Error('Wallet workflow is available in the web admin panel only.'));
-  }
-
-  if (window.ethers) return Promise.resolve(window.ethers);
-
-  return new Promise((resolve, reject) => {
-    const existing = document.getElementById(ETHERS_SCRIPT_ID) as HTMLScriptElement | null;
-    const script = existing || document.createElement('script');
-    script.id = ETHERS_SCRIPT_ID;
-    script.src = 'https://cdn.jsdelivr.net/npm/ethers@6.13.5/dist/ethers.umd.min.js';
-    script.async = true;
-    script.addEventListener('load', () => {
-      if (window.ethers) resolve(window.ethers);
-      else reject(new Error('Ethers SDK loaded but did not expose window.ethers.'));
-    }, { once: true });
-    script.addEventListener('error', () => reject(new Error('Unable to load ethers SDK.')), { once: true });
-    if (!existing) document.head.appendChild(script);
-  });
-};
-
-const toNumber = (value: unknown) => Number.parseFloat(String(value ?? '0')) || 0;
+type Tab = 'overview' | 'users' | 'withdrawals' | 'ledger' | 'audit';
+type Player = { telegram_id: string; username: string; total_tokens: number; pending_tokens: number; withdrawn_tokens: number; ads_watched: number; games_played: number; level: number; direct_referral_count: number; wallet_address: string; created_at: string };
+type LogRow = { id: string; created_at: string; [key: string]: any };
+const num = (v: any) => Number.parseFloat(String(v ?? 0)) || 0;
 
 export default function AdminPanelScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const [authed, setAuthed] = useState(false);
-  const [email, setEmail] = useState(ADMIN_EMAIL);
-  const [password, setPassword] = useState('');
-  const [tab, setTab] = useState<AdminTab>('overview');
-  const [loading, setLoading] = useState(false);
-  const [players, setPlayers] = useState<AdminPlayer[]>([]);
-  const [withdrawals, setWithdrawals] = useState<WithdrawalRequest[]>([]);
-  const [selectedWithdrawal, setSelectedWithdrawal] = useState<WithdrawalRequest | null>(null);
-  const [workflowStep, setWorkflowStep] = useState<WithdrawalStep>('review');
-  const [walletAddress, setWalletAddress] = useState('');
-  const [signature, setSignature] = useState('');
-  const [txHash, setTxHash] = useState('');
-  const [txnVerified, setTxnVerified] = useState(false);
+  const [ready, setReady] = useState(false), [isAdmin, setIsAdmin] = useState(false), [email, setEmail] = useState(''), [password, setPassword] = useState('');
+  const [tab, setTab] = useState<Tab>('overview'), [busy, setBusy] = useState(false), [players, setPlayers] = useState<Player[]>([]), [withdrawals, setWithdrawals] = useState<WithdrawalRequest[]>([]);
+  const [ledger, setLedger] = useState<LogRow[]>([]), [audit, setAudit] = useState<LogRow[]>([]), [search, setSearch] = useState('');
+  const [selected, setSelected] = useState<WithdrawalRequest | null>(null), [txHash, setTxHash] = useState(''), [rejectReason, setRejectReason] = useState('');
+  const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null), [adjustAmount, setAdjustAmount] = useState(''), [adjustReason, setAdjustReason] = useState('');
+  const [counts, setCounts] = useState({ ads: 0, games: 0, referrals: 0 });
 
-  const stats = useMemo<AdminStats>(() => ({
-    totalUsers: players.length,
-    totalTokens: players.reduce((sum, player) => sum + player.totalTokens, 0),
-    pendingTokens: players.reduce((sum, player) => sum + player.pendingTokens, 0),
-    withdrawnTokens: players.reduce((sum, player) => sum + player.withdrawnTokens, 0),
-    totalAds: players.reduce((sum, player) => sum + player.adsWatched, 0),
-    totalGames: players.reduce((sum, player) => sum + player.gamesPlayed, 0),
-    pendingWithdrawals: withdrawals.filter(item => item.status === 'pending').length,
-  }), [players, withdrawals]);
+  const loadData = useCallback(async () => {
+    if (!isAdmin) return;
+    setBusy(true);
+    try {
+      const [p, w, l, a, ads, games, refs] = await Promise.all([
+        supabase.from('players').select('telegram_id,username,total_tokens,pending_tokens,withdrawn_tokens,ads_watched,games_played,level,direct_referral_count,wallet_address,created_at').order('total_tokens', { ascending: false }).limit(1000),
+        supabase.from('withdrawals').select('*').order('created_at', { ascending: false }).limit(500),
+        supabase.from('token_ledger').select('*').order('created_at', { ascending: false }).limit(100),
+        supabase.from('admin_audit_log').select('*').order('created_at', { ascending: false }).limit(100),
+        supabase.from('ad_events').select('*', { count: 'exact', head: true }),
+        supabase.from('game_sessions').select('*', { count: 'exact', head: true }),
+        supabase.from('referrals').select('*', { count: 'exact', head: true }),
+      ]);
+      if (p.error) throw p.error; if (w.error) throw w.error; if (l.error) throw l.error; if (a.error) throw a.error;
+      setPlayers((p.data ?? []) as Player[]);
+      setWithdrawals((w.data ?? []).map((r: any) => ({ id: String(r.id), telegramId: String(r.telegram_id), username: String(r.username), amount: num(r.amount), walletAddress: String(r.wallet_address ?? ''), network: String(r.network ?? ''), status: r.status, createdAt: String(r.created_at), processedAt: r.processed_at ? String(r.processed_at) : undefined, txHash: r.tx_hash ? String(r.tx_hash) : undefined })));
+      setLedger((l.data ?? []) as LogRow[]); setAudit((a.data ?? []) as LogRow[]);
+      setCounts({ ads: ads.count ?? 0, games: games.count ?? 0, referrals: refs.count ?? 0 });
+    } catch (e: any) { Alert.alert('Admin data error', e?.message || 'Unable to load protected admin data.'); }
+    finally { setBusy(false); }
+  }, [isAdmin]);
 
-  const loadPlayers = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('players')
-      .select('telegram_id, username, wallet_address, total_tokens, pending_tokens, withdrawn_tokens, ads_watched, games_played, best_score, level, direct_referral_count, created_at')
-      .order('total_tokens', { ascending: false })
-      .limit(500);
-
-    if (error) throw error;
-
-    setPlayers(((data || []) as any[]).map(row => ({
-      telegramId: String(row.telegram_id ?? ''),
-      username: String(row.username ?? 'Unknown'),
-      walletAddress: String(row.wallet_address ?? ''),
-      totalTokens: toNumber(row.total_tokens),
-      pendingTokens: toNumber(row.pending_tokens),
-      withdrawnTokens: toNumber(row.withdrawn_tokens),
-      adsWatched: Number(row.ads_watched ?? 0),
-      gamesPlayed: Number(row.games_played ?? 0),
-      bestScore: Number(row.best_score ?? 0),
-      level: Number(row.level ?? 1),
-      referralCount: Number(row.direct_referral_count ?? 0),
-      createdAt: row.created_at ? String(row.created_at) : undefined,
-    })));
+  const verify = useCallback(async () => {
+    const { data } = await supabase.auth.getSession();
+    if (!data.session) { setReady(true); return; }
+    const { data: ok, error } = await supabase.rpc('is_admin');
+    if (!error && ok === true) setIsAdmin(true); else await supabase.auth.signOut();
+    setReady(true);
   }, []);
+  useEffect(() => { verify(); }, [verify]);
+  useEffect(() => { if (isAdmin) loadData(); }, [isAdmin, loadData]);
 
-  const loadDashboard = useCallback(async () => {
-    setLoading(true);
+  const login = async () => {
+    if (!email.trim() || !password) return Alert.alert('Missing details', 'Enter the admin email and password.');
+    setBusy(true);
+    const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+    if (error || !data.session) { setBusy(false); return Alert.alert('Login failed', error?.message || 'Unable to sign in.'); }
+    const { data: ok, error: adminError } = await supabase.rpc('is_admin');
+    if (adminError || ok !== true) { await supabase.auth.signOut(); setBusy(false); return Alert.alert('Access denied', 'This Supabase account is not registered in admin_users.'); }
+    setPassword(''); setIsAdmin(true); setBusy(false);
+  };
+  const logout = async () => { await supabase.auth.signOut(); setIsAdmin(false); setPlayers([]); setWithdrawals([]); };
+
+  const processWithdrawal = async (action: 'approved' | 'rejected') => {
+    if (!selected) return;
+    if (action === 'approved' && !txHash.trim()) return Alert.alert('Transaction hash required', 'Send the withdrawal on BNB Chain first, then paste its transaction hash.');
+    if (action === 'rejected' && !rejectReason.trim()) return Alert.alert('Reason required', 'Enter a rejection reason.');
+    setBusy(true);
     try {
-      const withdrawalList = await getWithdrawals();
-      setWithdrawals(withdrawalList);
-      await loadPlayers();
-    } catch (error) {
-      console.error('Admin panel load failed:', error);
-      Alert.alert('Database error', 'Unable to load Supabase admin data. Check environment variables and RLS policies.');
-    } finally {
-      setLoading(false);
-    }
-  }, [loadPlayers]);
-
-  useEffect(() => {
-    if (authed) loadDashboard();
-  }, [authed, loadDashboard]);
-
-  const handleLogin = () => {
-    if (!ADMIN_PASSWORD) {
-      Alert.alert('Missing env variable', 'Set EXPO_PUBLIC_ADMIN_PASSWORD in the deployment environment. Do not hardcode the password in code.');
-      return;
-    }
-    if (email.trim().toLowerCase() === ADMIN_EMAIL.toLowerCase() && password === ADMIN_PASSWORD) {
-      setAuthed(true);
-      setPassword('');
-      return;
-    }
-    Alert.alert('Access denied', 'Invalid admin email or password.');
+      const { error } = await supabase.rpc('admin_process_withdrawal', { p_withdrawal_id: selected.id, p_action: action, p_tx_hash: action === 'approved' ? txHash.trim() : null, p_rejection_reason: action === 'rejected' ? rejectReason.trim() : null });
+      if (error) throw error;
+      setSelected(null); setTxHash(''); setRejectReason(''); await loadData();
+      Alert.alert(action === 'approved' ? 'Withdrawal approved' : 'Withdrawal rejected', 'Balance, withdrawal status, token ledger and audit log were updated atomically.');
+    } catch (e: any) { Alert.alert('Withdrawal failed', e?.message || 'Protected withdrawal RPC failed.'); }
+    finally { setBusy(false); }
   };
 
-  const resetWorkflow = () => {
-    setWorkflowStep('review');
-    setWalletAddress('');
-    setSignature('');
-    setTxHash('');
-    setTxnVerified(false);
-  };
-
-  const openWithdrawal = (withdrawal: WithdrawalRequest) => {
-    setSelectedWithdrawal(withdrawal);
-    resetWorkflow();
-  };
-
-  const connectWallet = async () => {
+  const adjustBalance = async () => {
+    if (!selectedPlayer) return;
+    const amount = num(adjustAmount);
+    if (!amount || !adjustReason.trim()) return Alert.alert('Required', 'Enter a non-zero amount and a reason.');
+    setBusy(true);
     try {
-      if (!window.ethereum?.request) throw new Error('No injected wallet found. Install MetaMask or open in a wallet browser.');
-      await window.ethereum.request({ method: 'eth_requestAccounts' });
-      const ethers = await loadEthers();
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const signer = await provider.getSigner();
-      const address = await signer.getAddress();
-      setWalletAddress(address);
-      setWorkflowStep('signature');
-    } catch (error: any) {
-      Alert.alert('Wallet connection failed', error?.message || 'Unable to connect wallet.');
-    }
+      const { error } = await supabase.rpc('admin_adjust_balance', { p_telegram_id: selectedPlayer.telegram_id, p_amount: amount, p_reason: adjustReason.trim() });
+      if (error) throw error;
+      setSelectedPlayer(null); setAdjustAmount(''); setAdjustReason(''); await loadData();
+    } catch (e: any) { Alert.alert('Adjustment failed', e?.message || 'Protected balance RPC failed.'); }
+    finally { setBusy(false); }
   };
 
-  const requestSignature = async () => {
-    if (!selectedWithdrawal) return;
-    try {
-      const ethers = await loadEthers();
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const signer = await provider.getSigner();
-      const message = [
-        'MintGrow withdrawal approval',
-        `Withdrawal ID: ${selectedWithdrawal.id}`,
-        `User: ${selectedWithdrawal.telegramId}`,
-        `Amount: ${selectedWithdrawal.amount} MG`,
-        `Recipient: ${selectedWithdrawal.walletAddress}`,
-        `Admin wallet: ${walletAddress}`,
-        `Timestamp: ${new Date().toISOString()}`,
-      ].join('\n');
-      const signed = await signer.signMessage(message);
-      setSignature(signed);
-      setWorkflowStep('txn');
-    } catch (error: any) {
-      Alert.alert('Signature rejected', error?.message || 'Signature is required before approval.');
-    }
-  };
+  const filteredPlayers = useMemo(() => { const q = search.trim().toLowerCase(); return q ? players.filter(p => p.telegram_id.toLowerCase().includes(q) || p.username.toLowerCase().includes(q) || p.wallet_address.toLowerCase().includes(q)) : players; }, [players, search]);
+  const pending = withdrawals.filter(w => w.status === 'pending');
+  const totals = useMemo(() => ({ users: players.length, total: players.reduce((s,p)=>s+num(p.total_tokens),0), pending: players.reduce((s,p)=>s+num(p.pending_tokens),0), withdrawn: players.reduce((s,p)=>s+num(p.withdrawn_tokens),0), ads: players.reduce((s,p)=>s+Number(p.ads_watched||0),0), games: players.reduce((s,p)=>s+Number(p.games_played||0),0) }), [players]);
 
-  const verifyTxn = async () => {
-    if (!txHash.trim()) {
-      Alert.alert('Transaction required', 'Paste the BNB Chain transaction hash after sending funds.');
-      return;
-    }
-    try {
-      const ethers = await loadEthers();
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const receipt = await provider.getTransactionReceipt(txHash.trim());
-      if (!receipt) {
-        Alert.alert('Not detected yet', 'The transaction is not visible from the connected wallet RPC yet. Try again after confirmation.');
-        return;
-      }
-      setTxnVerified(true);
-      setWorkflowStep('complete');
-    } catch (error: any) {
-      Alert.alert('Transaction check failed', error?.message || 'Unable to verify transaction.');
-    }
-  };
-
-  const approveWithdrawal = async () => {
-    if (!selectedWithdrawal || !signature || !txnVerified || !txHash.trim()) return;
-    setLoading(true);
-    try {
-      await updateWithdrawal(selectedWithdrawal.id, {
-        status: 'approved',
-        txHash: txHash.trim(),
-        processedAt: new Date().toISOString(),
-      });
-
-      const { data: player } = await supabase
-        .from('players')
-        .select('pending_tokens, withdrawn_tokens')
-        .eq('telegram_id', selectedWithdrawal.telegramId)
-        .single();
-
-      if (player) {
-        await supabase.from('players').update({
-          pending_tokens: Math.max(0, toNumber((player as any).pending_tokens) - selectedWithdrawal.amount),
-          withdrawn_tokens: toNumber((player as any).withdrawn_tokens) + selectedWithdrawal.amount,
-        }).eq('telegram_id', selectedWithdrawal.telegramId);
-      }
-
-      Alert.alert('Withdrawal approved', 'Database updated with transaction hash and approval status.');
-      setSelectedWithdrawal(null);
-      resetWorkflow();
-      await loadDashboard();
-    } catch (error) {
-      console.error('Withdrawal approval failed:', error);
-      Alert.alert('Approval failed', 'Unable to approve withdrawal in Supabase.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const rejectWithdrawal = async () => {
-    if (!selectedWithdrawal) return;
-    setLoading(true);
-    try {
-      await updateWithdrawal(selectedWithdrawal.id, {
-        status: 'rejected',
-        processedAt: new Date().toISOString(),
-      });
-      const { data: player } = await supabase
-        .from('players')
-        .select('total_tokens, pending_tokens')
-        .eq('telegram_id', selectedWithdrawal.telegramId)
-        .single();
-      if (player) {
-        await supabase.from('players').update({
-          total_tokens: toNumber((player as any).total_tokens) + selectedWithdrawal.amount,
-          pending_tokens: Math.max(0, toNumber((player as any).pending_tokens) - selectedWithdrawal.amount),
-        }).eq('telegram_id', selectedWithdrawal.telegramId);
-      }
-      setSelectedWithdrawal(null);
-      resetWorkflow();
-      await loadDashboard();
-    } catch (error) {
-      console.error('Withdrawal rejection failed:', error);
-      Alert.alert('Reject failed', 'Unable to reject withdrawal in Supabase.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (!authed) {
-    return (
-      <View style={[styles.loginContainer, { paddingTop: insets.top + Spacing.xl }]}> 
-        <View style={styles.loginCard}>
-          <MaterialIcons name="admin-panel-settings" size={42} color={Colors.primary} />
-          <Text style={styles.title}>MintGrow Admin Panel</Text>
-          <Text style={styles.muted}>Secure admin access for {ADMIN_EMAIL}. Password must come from the environment.</Text>
-          <TextInput style={styles.input} value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" placeholder="Admin email" placeholderTextColor={Colors.textMuted} />
-          <TextInput style={styles.input} value={password} onChangeText={setPassword} secureTextEntry placeholder="Admin password env value" placeholderTextColor={Colors.textMuted} />
-          <Pressable style={styles.primaryBtn} onPress={handleLogin}>
-            <Text style={styles.primaryBtnText}>Login</Text>
-          </Pressable>
-          <Pressable onPress={() => router.back()}><Text style={styles.linkText}>Back to app</Text></Pressable>
-        </View>
-      </View>
-    );
-  }
-
-  return (
-    <View style={[styles.container, { paddingTop: insets.top }]}> 
-      <View style={styles.header}>
-        <Pressable onPress={() => router.back()}><MaterialIcons name="arrow-back" size={24} color={Colors.textPrimary} /></Pressable>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>MintGrow Command Center</Text>
-          <Text style={styles.muted}>Users · wallets · withdrawals · game activity</Text>
-        </View>
-        <Pressable style={styles.refreshBtn} onPress={loadDashboard} disabled={loading}>
-          {loading ? <ActivityIndicator size="small" color={Colors.primary} /> : <MaterialIcons name="refresh" size={20} color={Colors.primary} />}
-        </Pressable>
-      </View>
-
-      <View style={styles.tabs}>
-        {(['overview', 'users', 'withdrawals', 'games'] as AdminTab[]).map(item => (
-          <Pressable key={item} style={[styles.tab, tab === item && styles.activeTab]} onPress={() => setTab(item)}>
-            <Text style={[styles.tabText, tab === item && styles.activeTabText]}>{item.toUpperCase()}</Text>
-          </Pressable>
-        ))}
-      </View>
-
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        {tab === 'overview' && <Overview stats={stats} />}
-        {tab === 'users' && <Users players={players} />}
-        {tab === 'games' && <Games players={players} />}
-        {tab === 'withdrawals' && <Withdrawals withdrawals={withdrawals} onOpen={openWithdrawal} />}
-      </ScrollView>
-
-      <Modal visible={!!selectedWithdrawal} transparent animationType="slide" onRequestClose={() => setSelectedWithdrawal(null)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Withdrawal workflow</Text>
-            <Text style={styles.muted}>{TOKEN_NETWORK} · {selectedWithdrawal?.amount.toLocaleString()} MG</Text>
-            <Info label="User" value={`@${selectedWithdrawal?.username} (${selectedWithdrawal?.telegramId})`} />
-            <Info label="Recipient" value={selectedWithdrawal?.walletAddress || ''} mono />
-            <Info label="Step" value={workflowStep} />
-            {walletAddress ? <Info label="Admin wallet" value={walletAddress} mono /> : null}
-            {signature ? <Info label="Signature" value={`${signature.slice(0, 28)}...`} mono /> : null}
-
-            {workflowStep === 'review' && <Action label="1. Connect treasury wallet" onPress={connectWallet} icon="account-balance-wallet" />}
-            {workflowStep === 'signature' && <Action label="2. Request admin signature" onPress={requestSignature} icon="draw" />}
-            {(workflowStep === 'txn' || workflowStep === 'complete') && (
-              <>
-                <TextInput style={styles.input} value={txHash} onChangeText={setTxHash} placeholder="BNB Chain transaction hash" placeholderTextColor={Colors.textMuted} autoCapitalize="none" />
-                <Action label="3. Detect transaction receipt" onPress={verifyTxn} icon="search" />
-              </>
-            )}
-            {workflowStep === 'complete' && <Action label="4. Approve withdrawal in backend" onPress={approveWithdrawal} icon="verified" />}
-            {selectedWithdrawal?.status === 'pending' ? <Action label="Reject and refund pending tokens" onPress={rejectWithdrawal} icon="cancel" danger /> : null}
-            <Pressable style={styles.secondaryBtn} onPress={() => setSelectedWithdrawal(null)}><Text style={styles.secondaryBtnText}>Close</Text></Pressable>
-          </View>
-        </View>
-      </Modal>
-    </View>
-  );
+  if (!ready) return <Center><ActivityIndicator color={Colors.primary} /></Center>;
+  if (!isAdmin) return <Login email={email} password={password} setEmail={setEmail} setPassword={setPassword} login={login} busy={busy} back={()=>router.back()} />;
+  return <View style={[styles.container,{paddingTop:insets.top}]}>
+    <View style={styles.header}><Pressable onPress={()=>router.back()}><MaterialIcons name="arrow-back" size={24} color={Colors.textPrimary}/></Pressable><View style={{flex:1,marginLeft:12}}><Text style={styles.headerTitle}>MintGrow Command Center</Text><Text style={styles.sub}>Protected Supabase admin session</Text></View><Pressable onPress={loadData} style={styles.icon}><MaterialIcons name="refresh" size={20} color={Colors.primary}/></Pressable><Pressable onPress={logout} style={styles.icon}><MaterialIcons name="logout" size={20} color={Colors.textSecondary}/></Pressable></View>
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.nav} contentContainerStyle={styles.navContent}>{(['overview','users','withdrawals','ledger','audit'] as Tab[]).map(t=><Pressable key={t} onPress={()=>setTab(t)} style={[styles.navItem,tab===t&&styles.navActive]}><MaterialIcons name={tabIcon(t)} size={18} color={tab===t?Colors.primary:Colors.textMuted}/><Text style={[styles.navText,tab===t&&styles.navTextActive]}>{t[0].toUpperCase()+t.slice(1)}</Text>{t==='withdrawals'&&pending.length>0?<Text style={styles.badge}>{pending.length}</Text>:null}</Pressable>)}</ScrollView>
+    <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>{tab==='overview'&&<Overview totals={totals} pending={pending.length} counts={counts}/>} {tab==='users'&&<Users players={filteredPlayers} search={search} setSearch={setSearch} onAdjust={setSelectedPlayer}/>} {tab==='withdrawals'&&<Withdrawals rows={withdrawals} onOpen={setSelected}/>} {tab==='ledger'&&<Ledger rows={ledger}/>} {tab==='audit'&&<Audit rows={audit}/>}</ScrollView>
+    {busy?<View style={styles.busy}><ActivityIndicator color={Colors.primary}/></View>:null}
+    <Modal visible={!!selected} transparent animationType="slide" onRequestClose={()=>setSelected(null)}><View style={styles.overlay}><View style={styles.modal}><Text style={styles.modalTitle}>Withdrawal review</Text><Info label="User" value={`@${selected?.username} · ${selected?.telegramId}`}/><Info label="Amount" value={`${selected?.amount.toLocaleString()} MG`}/><Info label="Wallet" value={selected?.walletAddress||''} mono/><Info label="Network" value={selected?.network||TOKEN_NETWORK}/><Info label="Created" value={selected?new Date(selected.createdAt).toLocaleString():''}/>{selected?.status==='pending'?<><Text style={styles.label}>Transaction hash</Text><TextInput value={txHash} onChangeText={setTxHash} placeholder="0x..." placeholderTextColor={Colors.textMuted} autoCapitalize="none" style={styles.input}/><Pressable style={styles.primary} onPress={()=>processWithdrawal('approved')}><MaterialIcons name="check-circle" size={18} color="#fff"/><Text style={styles.primaryText}>Approve withdrawal</Text></Pressable><Text style={styles.label}>Rejection reason</Text><TextInput value={rejectReason} onChangeText={setRejectReason} placeholder="Reason for rejection" placeholderTextColor={Colors.textMuted} style={[styles.input,{minHeight:70}]} multiline/><Pressable style={styles.danger} onPress={()=>processWithdrawal('rejected')}><MaterialIcons name="cancel" size={18} color="#fff"/><Text style={styles.primaryText}>Reject and refund</Text></Pressable></>:<Info label="Status" value={selected?.status||''}/>}<Pressable onPress={()=>setSelected(null)} style={styles.secondary}><Text style={styles.secondaryText}>Close</Text></Pressable></View></View></Modal>
+    <Modal visible={!!selectedPlayer} transparent animationType="slide" onRequestClose={()=>setSelectedPlayer(null)}><View style={styles.overlay}><View style={styles.modal}><Text style={styles.modalTitle}>Adjust player balance</Text><Info label="Player" value={`@${selectedPlayer?.username}`}/><Info label="Current" value={`${num(selectedPlayer?.total_tokens).toLocaleString()} MG`}/><Text style={styles.label}>Amount (+ credit / - debit)</Text><TextInput value={adjustAmount} onChangeText={setAdjustAmount} keyboardType="decimal-pad" placeholder="500" placeholderTextColor={Colors.textMuted} style={styles.input}/><Text style={styles.label}>Reason</Text><TextInput value={adjustReason} onChangeText={setAdjustReason} placeholder="Support correction" placeholderTextColor={Colors.textMuted} style={[styles.input,{minHeight:70}]} multiline/><Pressable style={styles.primary} onPress={adjustBalance}><MaterialIcons name="edit" size={18} color="#fff"/><Text style={styles.primaryText}>Apply protected adjustment</Text></Pressable><Pressable onPress={()=>setSelectedPlayer(null)} style={styles.secondary}><Text style={styles.secondaryText}>Cancel</Text></Pressable></View></View></Modal>
+  </View>;
 }
+function Login({email,password,setEmail,setPassword,login,busy,back}:any){return <Center><View style={styles.login}><MaterialIcons name="admin-panel-settings" size={48} color={Colors.primary}/><Text style={styles.title}>MintGrow Admin</Text><Text style={styles.sub}>Sign in with the Supabase Auth account registered in admin_users.</Text><TextInput value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" placeholder="Admin email" placeholderTextColor={Colors.textMuted} style={styles.input}/><TextInput value={password} onChangeText={setPassword} secureTextEntry placeholder="Password" placeholderTextColor={Colors.textMuted} style={styles.input}/><Pressable style={styles.primary} onPress={login} disabled={busy}>{busy?<ActivityIndicator color="#fff"/>:<><MaterialIcons name="login" size={18} color="#fff"/><Text style={styles.primaryText}>Sign in</Text></>}</Pressable><Pressable onPress={back} style={styles.secondary}><Text style={styles.secondaryText}>Back to app</Text></Pressable></View></Center>}
+function Center({children}:{children:React.ReactNode}){return <View style={styles.center}>{children}</View>}
+function tabIcon(t:Tab):any{return ({overview:'dashboard',users:'people',withdrawals:'account-balance-wallet',ledger:'receipt-long',audit:'history'} as any)[t]}
+function Info({label,value,mono}:{label:string;value:string;mono?:boolean}){return <View style={styles.info}><Text style={styles.infoLabel}>{label}</Text><Text style={[styles.infoValue,mono&&styles.mono]} numberOfLines={3}>{value}</Text></View>}
+function Card({children}:{children:React.ReactNode}){return <View style={styles.card}>{children}</View>}
+function Overview({totals,pending,counts}:any){return <><Text style={styles.pageTitle}>Platform overview</Text><View style={styles.grid}>{[['Users',totals.users],['Total MG',Math.round(totals.total).toLocaleString()],['Pending MG',Math.round(totals.pending).toLocaleString()],['Withdrawn MG',Math.round(totals.withdrawn).toLocaleString()],['Ads',totals.ads],['Games',totals.games],['Ad events',counts.ads],['Game sessions',counts.games],['Referrals',counts.referrals],['Pending requests',pending]].map(([a,b])=><View key={String(a)} style={styles.statCard}><Text style={styles.statLabel}>{a}</Text><Text style={styles.stat}>{String(b)}</Text></View>)}</View><Card><Text style={styles.cardTitle}>Protected operations</Text><Text style={styles.sub}>Withdrawals and balance adjustments use security-definer RPCs that verify admin_users membership and write the audit trail and token ledger.</Text></Card></>}
+function Users({players,search,setSearch,onAdjust}:any){return <><Text style={styles.pageTitle}>Players</Text><TextInput value={search} onChangeText={setSearch} placeholder="Search username, Telegram ID or wallet" placeholderTextColor={Colors.textMuted} style={styles.input}/>{players.map((p:Player)=><Pressable key={p.telegram_id} style={styles.row} onPress={()=>onAdjust(p)}><View style={{flex:1}}><Text style={styles.rowTitle}>@{p.username}</Text><Text style={styles.sub}>{p.telegram_id} · Level {p.level} · {p.games_played} games</Text><Text style={styles.sub}>{p.wallet_address||'Wallet not set'}</Text></View><View style={{alignItems:'flex-end'}}><Text style={styles.amount}>{num(p.total_tokens).toLocaleString()} MG</Text><Text style={styles.sub}>Pending {num(p.pending_tokens).toLocaleString()}</Text></View></Pressable>)}</>}
+function Withdrawals({rows,onOpen}:any){return <><Text style={styles.pageTitle}>Withdrawals</Text>{rows.length===0?<Card><Text style={styles.sub}>No withdrawal requests.</Text></Card>:rows.map((w:WithdrawalRequest)=><Pressable key={w.id} style={styles.row} onPress={()=>onOpen(w)}><View style={{flex:1}}><Text style={styles.rowTitle}>@{w.username}</Text><Text style={styles.sub}>{w.telegramId} · {new Date(w.createdAt).toLocaleString()}</Text><Text style={styles.sub} numberOfLines={1}>{w.walletAddress}</Text></View><View style={{alignItems:'flex-end'}}><Text style={styles.amount}>{w.amount.toLocaleString()} MG</Text><Text style={[styles.status,{color:w.status==='approved'?Colors.success:w.status==='rejected'?Colors.error:Colors.warning}]}>{w.status.toUpperCase()}</Text></View></Pressable>)}</>}
+function Ledger({rows}:{rows:LogRow[]}){return <><Text style={styles.pageTitle}>Token ledger</Text>{rows.length===0?<Card><Text style={styles.sub}>No ledger entries.</Text></Card>:rows.map(r=><Card key={r.id}><Text style={styles.rowTitle}>{r.reason}</Text><Text style={styles.sub}>{r.telegram_id} · {new Date(r.created_at).toLocaleString()}</Text><Text style={styles.amount}>{num(r.amount).toLocaleString()} MG</Text><Text style={styles.sub}>{r.balance_before??'-'} → {r.balance_after??'-'} · {r.reference_type??'system'}</Text></Card>)}</>}
+function Audit({rows}:{rows:LogRow[]}){return <><Text style={styles.pageTitle}>Admin audit log</Text>{rows.length===0?<Card><Text style={styles.sub}>No audit entries.</Text></Card>:rows.map(r=><Card key={r.id}><Text style={styles.rowTitle}>{r.action}</Text><Text style={styles.sub}>{r.target_type}:{r.target_id} · {new Date(r.created_at).toLocaleString()}</Text>{r.reason?<Text style={styles.sub}>{r.reason}</Text>:null}</Card>)}</>}
 
-function Overview({ stats }: { stats: AdminStats }) {
-  return (
-    <View>
-      <View style={styles.grid}>
-        <Metric label="Users" value={stats.totalUsers} icon="groups" />
-        <Metric label="Total MG" value={Math.round(stats.totalTokens).toLocaleString()} icon="paid" />
-        <Metric label="Pending MG" value={Math.round(stats.pendingTokens).toLocaleString()} icon="hourglass-top" />
-        <Metric label="Withdrawn MG" value={Math.round(stats.withdrawnTokens).toLocaleString()} icon="outbound" />
-        <Metric label="Ads watched" value={stats.totalAds} icon="live-tv" />
-        <Metric label="Games played" value={stats.totalGames} icon="sports-esports" />
-      </View>
-      <View style={styles.workflowCard}>
-        <Text style={styles.sectionTitle}>Withdrawal backend workflow</Text>
-        <Text style={styles.bodyText}>1. Review wallet and user balance.\n2. Connect treasury wallet with ethers.js.\n3. Sign an approval message for auditability.\n4. Send MG/BNB Chain payout externally and paste the transaction hash.\n5. Detect the transaction receipt from the connected wallet RPC.\n6. Approve in Supabase backend and update pending/withdrawn balances.</Text>
-      </View>
-    </View>
-  );
-}
-
-function Users({ players }: { players: AdminPlayer[] }) {
-  return <>{players.map(player => <UserCard key={player.telegramId} player={player} />)}</>;
-}
-
-function Games({ players }: { players: AdminPlayer[] }) {
-  return <>{players.sort((a, b) => b.bestScore - a.bestScore).map(player => <UserCard key={player.telegramId} player={player} compact />)}</>;
-}
-
-function Withdrawals({ withdrawals, onOpen }: { withdrawals: WithdrawalRequest[]; onOpen: (item: WithdrawalRequest) => void }) {
-  return <>{withdrawals.map(item => (
-    <Pressable key={item.id} style={styles.card} onPress={() => onOpen(item)}>
-      <View style={styles.rowBetween}><Text style={styles.cardTitle}>@{item.username}</Text><Text style={styles.badge}>{item.status}</Text></View>
-      <Text style={styles.amount}>{item.amount.toLocaleString()} MG</Text>
-      <Text style={styles.mono}>{item.walletAddress}</Text>
-      <Text style={styles.muted}>{new Date(item.createdAt).toLocaleString()}</Text>
-      {item.txHash ? <Text style={styles.mono}>TX: {item.txHash}</Text> : null}
-    </Pressable>
-  ))}</>;
-}
-
-function UserCard({ player, compact }: { player: AdminPlayer; compact?: boolean }) {
-  return (
-    <View style={styles.card}>
-      <View style={styles.rowBetween}><Text style={styles.cardTitle}>@{player.username}</Text><Text style={styles.badge}>Lv {player.level}</Text></View>
-      <Text style={styles.muted}>Telegram ID: {player.telegramId}</Text>
-      {!compact ? <Text style={styles.mono}>{player.walletAddress || 'No wallet saved'}</Text> : null}
-      <View style={styles.inlineStats}>
-        <Text style={styles.statText}>{player.totalTokens.toLocaleString()} MG</Text>
-        <Text style={styles.statText}>{player.gamesPlayed} games</Text>
-        <Text style={styles.statText}>{player.adsWatched} ads</Text>
-        <Text style={styles.statText}>Best {player.bestScore.toLocaleString()}</Text>
-      </View>
-    </View>
-  );
-}
-
-function Metric({ label, value, icon }: { label: string; value: string | number; icon: keyof typeof MaterialIcons.glyphMap }) {
-  return <View style={styles.metric}><MaterialIcons name={icon} size={20} color={Colors.primary} /><Text style={styles.metricValue}>{value}</Text><Text style={styles.muted}>{label}</Text></View>;
-}
-
-function Info({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
-  return <View style={styles.infoRow}><Text style={styles.infoLabel}>{label}</Text><Text style={[styles.infoValue, mono && styles.mono]}>{value}</Text></View>;
-}
-
-function Action({ label, onPress, icon, danger }: { label: string; onPress: () => void; icon: keyof typeof MaterialIcons.glyphMap; danger?: boolean }) {
-  return <Pressable style={[styles.primaryBtn, danger && styles.dangerBtn]} onPress={onPress}><MaterialIcons name={icon} size={18} color="#fff" /><Text style={styles.primaryBtnText}>{label}</Text></Pressable>;
-}
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.bg },
-  loginContainer: { flex: 1, backgroundColor: Colors.bg, padding: Spacing.lg, alignItems: 'center', justifyContent: 'center' },
-  loginCard: { width: '100%', maxWidth: 420, backgroundColor: Colors.bgCard, borderRadius: Radius.xl, padding: Spacing.xl, gap: Spacing.md, borderWidth: 1, borderColor: Colors.border, alignItems: 'center' },
-  header: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.md, borderBottomWidth: 1, borderBottomColor: Colors.border },
-  headerTitle: { ...Typography.h3, color: Colors.textPrimary },
-  title: { ...Typography.h2, color: Colors.textPrimary, textAlign: 'center' },
-  muted: { ...Typography.small, color: Colors.textMuted },
-  bodyText: { ...Typography.body, color: Colors.textSecondary, lineHeight: 22 },
-  input: { width: '100%', backgroundColor: Colors.bgSurface, color: Colors.textPrimary, borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.border, paddingHorizontal: Spacing.md, paddingVertical: 12 },
-  primaryBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: Colors.primary, padding: Spacing.md, borderRadius: Radius.md, width: '100%' },
-  dangerBtn: { backgroundColor: Colors.error },
-  primaryBtnText: { ...Typography.bodyBold, color: '#fff' },
-  secondaryBtn: { alignItems: 'center', padding: Spacing.md },
-  secondaryBtnText: { ...Typography.bodyBold, color: Colors.primary },
-  linkText: { ...Typography.smallBold, color: Colors.primary },
-  refreshBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.bgCard, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: Colors.border },
-  tabs: { flexDirection: 'row', paddingHorizontal: Spacing.md, paddingTop: Spacing.sm, gap: 6 },
-  tab: { flex: 1, paddingVertical: 10, borderRadius: Radius.full, backgroundColor: Colors.bgSurface, alignItems: 'center' },
-  activeTab: { backgroundColor: Colors.primary },
-  tabText: { ...Typography.caption, color: Colors.textMuted, fontWeight: '700' },
-  activeTabText: { color: '#fff' },
-  scroll: { padding: Spacing.md, paddingBottom: 48 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
-  metric: { flexGrow: 1, minWidth: '45%', backgroundColor: Colors.bgCard, borderRadius: Radius.lg, padding: Spacing.md, borderWidth: 1, borderColor: Colors.border, gap: 4 },
-  metricValue: { fontSize: 20, fontWeight: '900', color: Colors.textPrimary },
-  workflowCard: { marginTop: Spacing.md, backgroundColor: Colors.bgCard, borderRadius: Radius.lg, padding: Spacing.md, borderWidth: 1, borderColor: Colors.border },
-  sectionTitle: { ...Typography.bodyBold, color: Colors.textPrimary, marginBottom: 8 },
-  card: { backgroundColor: Colors.bgCard, borderRadius: Radius.lg, padding: Spacing.md, borderWidth: 1, borderColor: Colors.border, marginBottom: Spacing.sm, gap: 6 },
-  rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.sm },
-  cardTitle: { ...Typography.bodyBold, color: Colors.textPrimary, flex: 1 },
-  badge: { ...Typography.caption, color: Colors.primary, textTransform: 'uppercase', fontWeight: '800' },
-  amount: { fontSize: 22, fontWeight: '900', color: Colors.primary },
-  mono: { ...Typography.caption, color: Colors.textSecondary, fontFamily: 'monospace' },
-  inlineStats: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
-  statText: { ...Typography.caption, color: Colors.textSecondary, backgroundColor: Colors.bgSurface, paddingHorizontal: 8, paddingVertical: 4, borderRadius: Radius.full },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.72)', justifyContent: 'flex-end' },
-  modalCard: { backgroundColor: Colors.bgCard, borderTopLeftRadius: Radius.xl, borderTopRightRadius: Radius.xl, padding: Spacing.lg, gap: Spacing.md, maxHeight: '88%' },
-  modalTitle: { ...Typography.h3, color: Colors.textPrimary },
-  infoRow: { borderBottomWidth: 1, borderBottomColor: Colors.border, paddingBottom: 8, gap: 4 },
-  infoLabel: { ...Typography.caption, color: Colors.textMuted, textTransform: 'uppercase' },
-  infoValue: { ...Typography.smallBold, color: Colors.textPrimary },
-});
+const styles=StyleSheet.create({container:{flex:1,backgroundColor:Colors.background},center:{flex:1,backgroundColor:Colors.background,justifyContent:'center',alignItems:'center',padding:Spacing.lg},login:{width:'100%',maxWidth:430,backgroundColor:Colors.surface,borderRadius:Radius.lg,padding:Spacing.xl,borderWidth:1,borderColor:Colors.border},title:{color:Colors.textPrimary,fontSize:26,fontWeight:'800',marginTop:12,marginBottom:8},header:{minHeight:68,flexDirection:'row',alignItems:'center',paddingHorizontal:Spacing.md,borderBottomWidth:1,borderBottomColor:Colors.border},headerTitle:{color:Colors.textPrimary,fontSize:18,fontWeight:'700'},sub:{color:Colors.textMuted,fontSize:12,lineHeight:18},icon:{padding:8},nav:{maxHeight:58,borderBottomWidth:1,borderBottomColor:Colors.border},navContent:{paddingHorizontal:8,gap:6,alignItems:'center'},navItem:{minWidth:82,paddingHorizontal:10,height:46,borderRadius:12,alignItems:'center',justifyContent:'center',flexDirection:'row',gap:5},navActive:{backgroundColor:Colors.surface},navText:{color:Colors.textMuted,fontSize:12,fontWeight:'600'},navTextActive:{color:Colors.primary},badge:{backgroundColor:Colors.warning,color:'#111',fontSize:10,fontWeight:'800',paddingHorizontal:5,paddingVertical:2,borderRadius:8},content:{padding:Spacing.md,paddingBottom:50},pageTitle:{color:Colors.textPrimary,fontSize:22,fontWeight:'800',marginBottom:8},grid:{flexDirection:'row',flexWrap:'wrap',gap:8},statCard:{width:'48%',minHeight:78,backgroundColor:Colors.surface,borderWidth:1,borderColor:Colors.border,borderRadius:Radius.md,padding:14},statLabel:{color:Colors.textMuted,fontSize:11},stat:{color:Colors.textPrimary,fontSize:22,fontWeight:'800',marginTop:4},card:{backgroundColor:Colors.surface,borderWidth:1,borderColor:Colors.border,borderRadius:Radius.md,padding:14,marginBottom:8},cardTitle:{color:Colors.textPrimary,fontSize:15,fontWeight:'700',marginBottom:5},row:{backgroundColor:Colors.surface,borderWidth:1,borderColor:Colors.border,borderRadius:Radius.md,padding:14,marginBottom:8,flexDirection:'row',gap:10},rowTitle:{color:Colors.textPrimary,fontSize:14,fontWeight:'700'},amount:{color:Colors.primary,fontSize:14,fontWeight:'800'},status:{fontSize:10,fontWeight:'800',marginTop:5},input:{backgroundColor:Colors.background,borderWidth:1,borderColor:Colors.border,borderRadius:12,color:Colors.textPrimary,paddingHorizontal:13,paddingVertical:12,marginTop:7,marginBottom:10},label:{color:Colors.textMuted,fontSize:11,marginTop:8},primary:{minHeight:46,borderRadius:12,backgroundColor:Colors.primary,alignItems:'center',justifyContent:'center',flexDirection:'row',gap:7,marginTop:10,paddingHorizontal:14},primaryText:{color:'#fff',fontWeight:'800'},danger:{minHeight:46,borderRadius:12,backgroundColor:Colors.error,alignItems:'center',justifyContent:'center',flexDirection:'row',gap:7,marginTop:10,paddingHorizontal:14},secondary:{minHeight:42,borderRadius:12,borderWidth:1,borderColor:Colors.border,alignItems:'center',justifyContent:'center',marginTop:10},secondaryText:{color:Colors.textPrimary,fontWeight:'700'},busy:{position:'absolute',right:14,top:80},overlay:{flex:1,backgroundColor:'rgba(0,0,0,.65)',justifyContent:'flex-end'},modal:{backgroundColor:Colors.surface,borderTopLeftRadius:22,borderTopRightRadius:22,padding:Spacing.lg,maxHeight:'92%'},modalTitle:{color:Colors.textPrimary,fontSize:20,fontWeight:'800',marginBottom:12},info:{paddingVertical:7,borderBottomWidth:1,borderBottomColor:Colors.border},infoLabel:{color:Colors.textMuted,fontSize:10,textTransform:'uppercase'},infoValue:{color:Colors.textPrimary,fontSize:13,marginTop:3},mono:{fontFamily:'monospace'} });
