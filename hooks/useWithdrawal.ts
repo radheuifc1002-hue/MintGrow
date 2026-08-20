@@ -4,7 +4,6 @@ import {
 } from '@/services/storage';
 import { showRewardedAd } from '@/services/monetag';
 import { WithdrawalRequest, WITHDRAWAL_MIN, TOKEN_NETWORK } from '@/types/game';
-import { supabase } from '@/services/supabase';
 
 const BEP20_ADDRESS_PATTERN = /^0x[a-fA-F0-9]{40}$/;
 
@@ -65,29 +64,16 @@ export function useWithdrawal() {
         createdAt: new Date().toISOString(),
       };
 
-      const { error: rpcError } = await supabase.rpc('submit_withdrawal_request', {
-        p_id: req.id,
-        p_telegram_id: req.telegramId,
-        p_username: req.username,
-        p_amount: req.amount,
-        p_wallet_address: req.walletAddress,
-        p_network: req.network,
-      });
-
-      if (rpcError) {
-        await saveWithdrawal(req);
-      }
-
       profile.totalTokens = Math.round((profile.totalTokens - amount) * 100) / 100;
       profile.pendingTokens = Math.round((profile.pendingTokens + amount) * 100) / 100;
       await saveProfile(profile);
+      await saveWithdrawal(req);
 
       const list = await getWithdrawals(profile.telegramId);
       setWithdrawals(list);
       return true;
-    } catch (withdrawalError) {
-      console.error('Withdrawal request failed:', withdrawalError);
-      setError('Failed to submit withdrawal to the backend. Please try again.');
+    } catch {
+      setError('Failed to submit. Please try again.');
       return false;
     } finally {
       setIsLoading(false);
@@ -109,15 +95,9 @@ export function useWithdrawal() {
     try {
       profile.walletAddress = normalized;
       await saveProfile(profile);
-      const { error: walletError } = await supabase
-        .from('players')
-        .update({ wallet_address: normalized })
-        .eq('telegram_id', profile.telegramId);
-      if (walletError) throw walletError;
       return true;
-    } catch (walletError) {
-      console.error('Wallet address save failed:', walletError);
-      setError('Failed to save wallet address to the backend. Please try again.');
+    } catch {
+      setError('Failed to save wallet address. Please try again.');
       return false;
     } finally {
       setIsLoading(false);
