@@ -1,8 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Animated, Pressable } from 'react-native';
 import { Tile } from '@/types/game';
-import { getCoinForValue } from '@/constants/theme';
-import { Colors, Radius, Typography } from '@/constants/theme';
+import { Colors, getCoinForValue, Radius } from '@/constants/theme';
 import { useGame } from '@/hooks/useGame';
 
 interface Props {
@@ -97,7 +96,7 @@ export function GameTile({ tile, tileSize, gap }: Props) {
           top,
           backgroundColor: getBg(),
           borderColor: getBorder(),
-          borderWidth: tile.isMerged || (isSelectingDestroy && tile.type === 'normal') ? 2 : 1,
+          borderWidth: tile.isMerged || (isSelectingDestroy && tile.type === 'normal') ? 3 : 2,
           transform: [
             { scale: Animated.multiply(Animated.multiply(scaleAnim, mergeAnim), destroyPulse) },
           ],
@@ -136,27 +135,32 @@ export function GameTile({ tile, tileSize, gap }: Props) {
 const styles = StyleSheet.create({
   tile: {
     position: 'absolute',
-    borderRadius: Radius.sm,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 3,
-    elevation: 3,
+    borderRadius: Radius.md,
+    shadowColor: '#00180F',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.22,
+    shadowRadius: 10,
+    elevation: 8,
   },
   pressable: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    borderRadius: Radius.md,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.65)',
   },
-  emoji: { marginBottom: 1 },
-  symbol: { fontWeight: '700', letterSpacing: 0.3 },
-  value: { fontWeight: '500', marginTop: 1 },
+  emoji: { marginBottom: 1, textShadowColor: 'rgba(255,255,255,0.8)', textShadowRadius: 8 },
+  symbol: { fontWeight: '900', letterSpacing: 0.8 },
+  value: { fontWeight: '800', marginTop: 1, opacity: 0.8 },
   destroyOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(211,47,47,0.25)',
-    borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
+    borderRadius: Radius.md,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.65)',
   },
   destroyX: { fontSize: 20, color: Colors.error, fontWeight: '900' },
 });

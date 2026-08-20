@@ -154,6 +154,8 @@ export const updateProfileTokens = async (tokens: number, score: number): Promis
   if (!profile) return null;
   profile.totalTokens = Math.round((profile.totalTokens + tokens) * 100) / 100;
   if (score > profile.bestScore) profile.bestScore = score;
+  const { getLevelFromScore } = await import('@/services/gameEngine');
+  profile.level = Math.max(profile.level || 1, getLevelFromScore(score));
   await saveProfile(profile);
   return profile;
 };
@@ -263,24 +265,23 @@ export const getWithdrawals = async (telegramId?: string): Promise<WithdrawalReq
     if (telegramId) query = query.eq('telegram_id', telegramId);
     const { data, error } = await query;
     if (error || !data) return [];
-    return data.map(r => ({
-      id: r.id,
-      telegramId: r.telegram_id,
-      username: r.username,
-      amount: parseFloat(r.amount),
-      walletAddress: r.wallet_address,
-      network: r.network,
-      status: r.status,
-      createdAt: r.created_at,
-      processedAt: r.processed_at ?? undefined,
-      txHash: r.tx_hash ?? undefined,
+    return (data as any[]).map(r => ({
+      id: String(r.id),
+      telegramId: String(r.telegram_id),
+      username: String(r.username),
+      amount: parseFloat(String(r.amount ?? '0')),
+      walletAddress: String(r.wallet_address ?? ''),
+      network: String(r.network ?? ''),
+      status: r.status as WithdrawalRequest['status'],
+      createdAt: String(r.created_at),
+      processedAt: r.processed_at ? String(r.processed_at) : undefined,
+      txHash: r.tx_hash ? String(r.tx_hash) : undefined,
     }));
   } catch { return []; }
 };
 
 export const saveWithdrawal = async (req: WithdrawalRequest): Promise<void> => {
-  try {
-    await supabase.from('withdrawals').insert({
+  const { error } = await supabase.from('withdrawals').insert({
       id: req.id,
       telegram_id: req.telegramId,
       username: req.username,
@@ -288,19 +289,18 @@ export const saveWithdrawal = async (req: WithdrawalRequest): Promise<void> => {
       wallet_address: req.walletAddress,
       network: req.network,
       status: req.status,
-      created_at: req.createdAt,
-    });
-  } catch {}
+    created_at: req.createdAt,
+  });
+  if (error) throw error;
 };
 
 export const updateWithdrawal = async (id: string, updates: Partial<WithdrawalRequest>): Promise<void> => {
-  try {
-    const row: any = {};
-    if (updates.status)      row.status = updates.status;
-    if (updates.txHash)      row.tx_hash = updates.txHash;
-    if (updates.processedAt) row.processed_at = updates.processedAt;
-    await supabase.from('withdrawals').update(row).eq('id', id);
-  } catch {}
+  const row: any = {};
+  if (updates.status)      row.status = updates.status;
+  if (updates.txHash)      row.tx_hash = updates.txHash;
+  if (updates.processedAt) row.processed_at = updates.processedAt;
+  const { error } = await supabase.from('withdrawals').update(row).eq('id', id);
+  if (error) throw error;
 };
 
 // ─── Referrals (Supabase) ─────────────────────────────────────────────────────
@@ -315,13 +315,13 @@ export const getReferrals = async (referrerTelegramId?: string): Promise<Referra
       .eq('referrer_telegram_id', telegramId)
       .order('created_at', { ascending: false });
     if (error || !data) return [];
-    return data.map(r => ({
+    return (data as any[]).map(r => ({
       code: referrerTelegramId ?? telegramId,
       username: r.players?.username ?? 'Unknown',
-      joinedAt: r.created_at,
-      tokensEarned: parseFloat(r.tokens_earned ?? '0'),
-      level: r.level,
-      refereeBalance: parseFloat(r.players?.total_tokens ?? '0'),
+      joinedAt: String(r.created_at),
+      tokensEarned: parseFloat(String(r.tokens_earned ?? '0')),
+      level: Number(r.level ?? 1),
+      refereeBalance: parseFloat(String(r.players?.total_tokens ?? '0')),
     }));
   } catch { return []; }
 };
@@ -351,29 +351,23 @@ export const applyReferralCode = async (code: string): Promise<boolean> => {
 
   // Create referral relationship (level 1)
   await supabase.from('referrals').upsert({
-    referrer_telegram_id: referrer.telegram_id,
+    referrer_telegram_id: String((referrer as any).telegram_id),
     referee_telegram_id: profile.telegramId,
     level: 1,
     tokens_earned: 0,
   }, { onConflict: 'referrer_telegram_id,referee_telegram_id' });
 
-  // Increment referrer's direct count + award 500 MG signup bonus
-  await supabase.from('players').update({
-    direct_referral_count: (referrer.direct_referral_count ?? 0) + 1,
-    total_tokens: supabase.rpc as any,  // handled below
-  }).eq('telegram_id', referrer.telegram_id);
-
   // Atomic increment via RPC or just fetch+update
   const { data: rRow } = await supabase
     .from('players')
     .select('total_tokens, direct_referral_count')
-    .eq('telegram_id', referrer.telegram_id)
+    .eq('telegram_id', String((referrer as any).telegram_id))
     .single();
   if (rRow) {
     await supabase.from('players').update({
-      total_tokens: parseFloat(rRow.total_tokens) + 500,
-      direct_referral_count: (rRow.direct_referral_count ?? 0) + 1,
-    }).eq('telegram_id', referrer.telegram_id);
+      total_tokens: parseFloat(String((rRow as any).total_tokens ?? '0')) + 500,
+      direct_referral_count: Number((rRow as any).direct_referral_count ?? 0) + 1,
+    }).eq('telegram_id', String((referrer as any).telegram_id));
   }
 
   return true;
@@ -462,16 +456,16 @@ export const subscribeWithdrawalUpdates = (
       (payload) => {
         const r = payload.new;
         onUpdate({
-          id: r.id,
-          telegramId: r.telegram_id,
-          username: r.username,
-          amount: parseFloat(r.amount),
-          walletAddress: r.wallet_address,
-          network: r.network,
-          status: r.status,
-          createdAt: r.created_at,
-          processedAt: r.processed_at ?? undefined,
-          txHash: r.tx_hash ?? undefined,
+          id: String((r as any).id),
+          telegramId: String((r as any).telegram_id),
+          username: String((r as any).username),
+          amount: parseFloat(String((r as any).amount ?? '0')),
+          walletAddress: String((r as any).wallet_address ?? ''),
+          network: String((r as any).network ?? ''),
+          status: (r as any).status as WithdrawalRequest['status'],
+          createdAt: String((r as any).created_at),
+          processedAt: (r as any).processed_at ? String((r as any).processed_at) : undefined,
+          txHash: (r as any).tx_hash ? String((r as any).tx_hash) : undefined,
         });
       }
     )

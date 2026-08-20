@@ -6,7 +6,7 @@ import { Image } from 'expo-image';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, Spacing, Radius, Typography } from '@/constants/theme';
 import { useGame } from '@/hooks/useGame';
-import { showRegistrationAd } from '@/services/monetag';
+import { recordAdEvent, showRegistrationAd } from '@/services/monetag';
 import { getProfile, saveProfile } from '@/services/storage';
 import { AdLoadingOverlay } from './AdLoadingOverlay';
 
@@ -40,6 +40,7 @@ export function RegistrationGate() {
     setLoading(true);
     try {
       const result = await showRegistrationAd();
+      await recordAdEvent('registration', result, result.watched ? 100 : 0, profile?.telegramId);
       if (result.watched) {
         // Mark as registered
         const p = await getProfile();

@@ -1,8 +1,8 @@
 import React, { useRef } from 'react';
-import { View, StyleSheet, Dimensions, PanResponder } from 'react-native';
+import { View, StyleSheet, Dimensions, PanResponder, Text } from 'react-native';
 import { useGame } from '@/hooks/useGame';
 import { GameTile } from './GameTile';
-import { Colors, Radius } from '@/constants/theme';
+import { Colors, Radius, Spacing, Typography } from '@/constants/theme';
 
 const BOARD_SIZE = 4;
 const GAP = 8;
@@ -43,10 +43,15 @@ export function GameBoard() {
   ).current;
 
   return (
-    <View
-      style={[styles.container, { width: boardDim, height: boardDim }]}
-      {...panResponder.panHandlers}
-    >
+    <View style={styles.frame}>
+      <View style={styles.topRail}>
+        <Text style={styles.railText}>Swipe to merge</Text>
+        <View style={styles.liveDot} />
+      </View>
+      <View
+        style={[styles.container, { width: boardDim, height: boardDim }]}
+        {...panResponder.panHandlers}
+      >
       {/* Empty cells */}
       {Array(BOARD_SIZE).fill(null).map((_, r) =>
         Array(BOARD_SIZE).fill(null).map((_, c) => (
@@ -71,17 +76,38 @@ export function GameBoard() {
           tile ? <GameTile key={tile.id} tile={tile} tileSize={tileSize} gap={GAP} /> : null
         )
       )}
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  frame: {
+    backgroundColor: '#09291D',
+    borderRadius: Radius.xl,
+    padding: Spacing.sm,
+    borderWidth: 2,
+    borderColor: '#1DE89B',
+    shadowColor: Colors.primary,
+    shadowOpacity: 0.24,
+    shadowRadius: 18,
+    elevation: 10,
+  },
+  topRail: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.sm,
+    paddingBottom: Spacing.sm,
+  },
+  railText: { ...Typography.caption, color: '#B8FFD9', letterSpacing: 1.2, textTransform: 'uppercase' },
+  liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#23F0A7' },
   container: {
-    backgroundColor: Colors.bgSurface,
+    backgroundColor: '#103D2C',
     borderRadius: Radius.lg,
     position: 'relative',
     borderWidth: 1.5,
-    borderColor: Colors.borderStrong,
+    borderColor: 'rgba(184,255,217,0.35)',
     shadowColor: Colors.primary,
     shadowOpacity: 0.08,
     shadowRadius: 12,
@@ -89,9 +115,9 @@ const styles = StyleSheet.create({
   },
   emptyCell: {
     position: 'absolute',
-    backgroundColor: Colors.bg,
+    backgroundColor: 'rgba(255,255,255,0.08)',
     borderRadius: Radius.sm,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: 'rgba(184,255,217,0.18)',
   },
 });

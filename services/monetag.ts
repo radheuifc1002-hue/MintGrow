@@ -221,6 +221,22 @@ export const showRewardedAd = (format: MonetagAdFormat = 'rewarded'): Promise<Ad
   });
 };
 
+
+export const recordAdEvent = async (placement: string, result: AdResult, rewardTokens = 0, telegramId?: string): Promise<void> => {
+  try {
+    await supabase.from('ad_events').insert({
+      telegram_id: telegramId ?? null,
+      placement,
+      provider: 'monetag',
+      watched: result.watched,
+      error: result.error ?? null,
+      reward_tokens: rewardTokens,
+    });
+  } catch (error) {
+    console.error('Failed to record ad event:', error);
+  }
+};
+
 export const showInterstitialAd = (): Promise<AdResult> => {
   return showRewardedAd('inApp');
 };

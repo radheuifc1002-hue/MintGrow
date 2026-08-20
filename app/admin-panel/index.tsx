@@ -100,6 +100,19 @@ export default function AdminPanelScreen() {
   const [signature, setSignature] = useState('');
   const [txHash, setTxHash] = useState('');
   const [txnVerified, setTxnVerified] = useState(false);
+  const [search, setSearch] = useState('');
+
+  const filteredPlayers = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return players;
+    return players.filter(player => [player.username, player.telegramId, player.walletAddress].some(value => value.toLowerCase().includes(q)));
+  }, [players, search]);
+
+  const filteredWithdrawals = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return withdrawals;
+    return withdrawals.filter(item => [item.username, item.telegramId, item.walletAddress, item.status, item.txHash ?? ''].some(value => value.toLowerCase().includes(q)));
+  }, [withdrawals, search]);
 
   const stats = useMemo<AdminStats>(() => ({
     totalUsers: players.length,
@@ -329,9 +342,15 @@ export default function AdminPanelScreen() {
           <Text style={styles.headerTitle}>MintGrow Command Center</Text>
           <Text style={styles.muted}>Users · wallets · withdrawals · game activity</Text>
         </View>
+        <View style={styles.adminMark}><Text style={styles.adminMarkText}>MG</Text></View>
         <Pressable style={styles.refreshBtn} onPress={loadDashboard} disabled={loading}>
           {loading ? <ActivityIndicator size="small" color={Colors.primary} /> : <MaterialIcons name="refresh" size={20} color={Colors.primary} />}
         </Pressable>
+      </View>
+
+      <View style={styles.searchBar}>
+        <MaterialIcons name="search" size={18} color={Colors.textMuted} />
+        <TextInput style={styles.searchInput} value={search} onChangeText={setSearch} placeholder="Search users, wallets, withdrawals, tx hash" placeholderTextColor={Colors.textMuted} />
       </View>
 
       <View style={styles.tabs}>
@@ -344,9 +363,9 @@ export default function AdminPanelScreen() {
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         {tab === 'overview' && <Overview stats={stats} />}
-        {tab === 'users' && <Users players={players} />}
-        {tab === 'games' && <Games players={players} />}
-        {tab === 'withdrawals' && <Withdrawals withdrawals={withdrawals} onOpen={openWithdrawal} />}
+        {tab === 'users' && <Users players={filteredPlayers} />}
+        {tab === 'games' && <Games players={filteredPlayers} />}
+        {tab === 'withdrawals' && <Withdrawals withdrawals={filteredWithdrawals} onOpen={openWithdrawal} />}
       </ScrollView>
 
       <Modal visible={!!selectedWithdrawal} transparent animationType="slide" onRequestClose={() => setSelectedWithdrawal(null)}>
@@ -388,6 +407,10 @@ function Overview({ stats }: { stats: AdminStats }) {
         <Metric label="Withdrawn MG" value={Math.round(stats.withdrawnTokens).toLocaleString()} icon="outbound" />
         <Metric label="Ads watched" value={stats.totalAds} icon="live-tv" />
         <Metric label="Games played" value={stats.totalGames} icon="sports-esports" />
+      </View>
+      <View style={styles.opsBanner}>
+        <Text style={styles.opsTitle}>Operations cockpit</Text>
+        <Text style={styles.opsText}>Track wallets, ad gates, pending payouts, gameplay value, and approval signatures from one Vercel-friendly dashboard.</Text>
       </View>
       <View style={styles.workflowCard}>
         <Text style={styles.sectionTitle}>Withdrawal backend workflow</Text>
@@ -446,13 +469,13 @@ function Action({ label, onPress, icon, danger }: { label: string; onPress: () =
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.bg },
-  loginContainer: { flex: 1, backgroundColor: Colors.bg, padding: Spacing.lg, alignItems: 'center', justifyContent: 'center' },
+  container: { flex: 1, backgroundColor: '#071A13' },
+  loginContainer: { flex: 1, backgroundColor: '#071A13', padding: Spacing.lg, alignItems: 'center', justifyContent: 'center' },
   loginCard: { width: '100%', maxWidth: 420, backgroundColor: Colors.bgCard, borderRadius: Radius.xl, padding: Spacing.xl, gap: Spacing.md, borderWidth: 1, borderColor: Colors.border, alignItems: 'center' },
-  header: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.md, borderBottomWidth: 1, borderBottomColor: Colors.border },
-  headerTitle: { ...Typography.h3, color: Colors.textPrimary },
+  header: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.md, borderBottomWidth: 1, borderBottomColor: 'rgba(184,255,217,0.18)' },
+  headerTitle: { ...Typography.h3, color: '#FFFFFF' },
   title: { ...Typography.h2, color: Colors.textPrimary, textAlign: 'center' },
-  muted: { ...Typography.small, color: Colors.textMuted },
+  muted: { ...Typography.small, color: '#8BCFAE' },
   bodyText: { ...Typography.body, color: Colors.textSecondary, lineHeight: 22 },
   input: { width: '100%', backgroundColor: Colors.bgSurface, color: Colors.textPrimary, borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.border, paddingHorizontal: Spacing.md, paddingVertical: 12 },
   primaryBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: Colors.primary, padding: Spacing.md, borderRadius: Radius.md, width: '100%' },
@@ -461,17 +484,24 @@ const styles = StyleSheet.create({
   secondaryBtn: { alignItems: 'center', padding: Spacing.md },
   secondaryBtnText: { ...Typography.bodyBold, color: Colors.primary },
   linkText: { ...Typography.smallBold, color: Colors.primary },
-  refreshBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.bgCard, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: Colors.border },
+  adminMark: { width: 40, height: 40, borderRadius: 14, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center' },
+  adminMarkText: { color: '#fff', fontWeight: '900' },
+  refreshBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(184,255,217,0.22)' },
+  searchBar: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: Spacing.md, marginTop: Spacing.md, paddingHorizontal: Spacing.md, borderRadius: Radius.full, backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: 'rgba(184,255,217,0.18)' },
+  searchInput: { flex: 1, minHeight: 44, color: '#FFFFFF' },
   tabs: { flexDirection: 'row', paddingHorizontal: Spacing.md, paddingTop: Spacing.sm, gap: 6 },
-  tab: { flex: 1, paddingVertical: 10, borderRadius: Radius.full, backgroundColor: Colors.bgSurface, alignItems: 'center' },
+  tab: { flex: 1, paddingVertical: 10, borderRadius: Radius.full, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(184,255,217,0.12)' },
   activeTab: { backgroundColor: Colors.primary },
-  tabText: { ...Typography.caption, color: Colors.textMuted, fontWeight: '700' },
+  tabText: { ...Typography.caption, color: '#8BCFAE', fontWeight: '700' },
   activeTabText: { color: '#fff' },
   scroll: { padding: Spacing.md, paddingBottom: 48 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
-  metric: { flexGrow: 1, minWidth: '45%', backgroundColor: Colors.bgCard, borderRadius: Radius.lg, padding: Spacing.md, borderWidth: 1, borderColor: Colors.border, gap: 4 },
+  metric: { flexGrow: 1, minWidth: '45%', backgroundColor: 'rgba(255,255,255,0.96)', borderRadius: Radius.lg, padding: Spacing.md, borderWidth: 1, borderColor: 'rgba(184,255,217,0.35)', gap: 4 },
   metricValue: { fontSize: 20, fontWeight: '900', color: Colors.textPrimary },
-  workflowCard: { marginTop: Spacing.md, backgroundColor: Colors.bgCard, borderRadius: Radius.lg, padding: Spacing.md, borderWidth: 1, borderColor: Colors.border },
+  opsBanner: { marginTop: Spacing.md, backgroundColor: Colors.primary, borderRadius: Radius.xl, padding: Spacing.lg, gap: 6 },
+  opsTitle: { fontSize: 22, fontWeight: '900', color: '#fff' },
+  opsText: { ...Typography.small, color: '#E8FFF3', lineHeight: 20 },
+  workflowCard: { marginTop: Spacing.md, backgroundColor: 'rgba(255,255,255,0.96)', borderRadius: Radius.lg, padding: Spacing.md, borderWidth: 1, borderColor: 'rgba(184,255,217,0.35)' },
   sectionTitle: { ...Typography.bodyBold, color: Colors.textPrimary, marginBottom: 8 },
   card: { backgroundColor: Colors.bgCard, borderRadius: Radius.lg, padding: Spacing.md, borderWidth: 1, borderColor: Colors.border, marginBottom: Spacing.sm, gap: 6 },
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.sm },

@@ -208,7 +208,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
         if (newScore > bestScore) setBestScore(newScore);
 
-        const earned = calculateTokensEarned(newScore, s);
+        const earned = calculateTokensEarned(newScore, s, movesRef.current + 1);
         if (earned > 0) {
           setSessionTokens(st => Math.round((st + earned) * 100) / 100);
           updateProfileTokens(earned, newScore).then(p => {
