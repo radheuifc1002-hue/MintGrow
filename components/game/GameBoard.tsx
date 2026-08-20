@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { View, StyleSheet, Dimensions, PanResponder, Text } from 'react-native';
+import { View, StyleSheet, useWindowDimensions, PanResponder, Text } from 'react-native';
 import { useGame } from '@/hooks/useGame';
 import { GameTile } from './GameTile';
 import { Colors, Radius, Spacing, Typography } from '@/constants/theme';
@@ -7,21 +7,23 @@ import { Colors, Radius, Spacing, Typography } from '@/constants/theme';
 const BOARD_SIZE = 4;
 const GAP = 8;
 
-function getBoardMetrics() {
-  const { width, height } = Dimensions.get('window');
-  const maxFromWidth = Math.max(260, width - 48);
-  // Keep the board compact enough to stay inside Telegram's WebView viewport.
-  // The page itself is no longer expected to scroll while swiping the board.
-  const maxFromHeight = Math.max(260, Math.min(height * 0.44, 380));
-  const boardW = Math.min(maxFromWidth, maxFromHeight, 360);
+function getBoardMetrics(width: number, height: number) {
+  // Telegram Mini Apps can have a short WebView viewport. Size the board from
+  // both dimensions so it never becomes taller than the playable viewport.
+  const maxFromWidth = Math.max(240, width - 40);
+  const maxFromHeight = Math.max(240, Math.min(height * 0.38, 320));
+  const boardW = Math.min(maxFromWidth, maxFromHeight, 320);
   const tileSize = Math.floor((boardW - GAP * (BOARD_SIZE + 1)) / BOARD_SIZE);
-  const boardDim = tileSize * BOARD_SIZE + GAP * (BOARD_SIZE + 1);
-  return { tileSize: Math.max(tileSize, 52), boardDim };
+  return {
+    tileSize: Math.max(tileSize, 50),
+    boardDim: Math.max(tileSize, 50) * BOARD_SIZE + GAP * (BOARD_SIZE + 1),
+  };
 }
 
 export function GameBoard() {
   const { board, move } = useGame();
-  const { tileSize, boardDim } = getBoardMetrics();
+  const { width, height } = useWindowDimensions();
+  const { tileSize, boardDim } = getBoardMetrics(width, height);
   const swipeStart = useRef({ x: 0, y: 0 });
 
   const panResponder = useRef(
@@ -44,12 +46,15 @@ export function GameBoard() {
   ).current;
 
   return (
-    <View style={styles.frame} {...panResponder.panHandlers}>
+    <View style={styles.frame}>
       <View style={styles.topRail} pointerEvents="none">
         <Text style={styles.railText}>Swipe to merge</Text>
         <View style={styles.liveDot} />
       </View>
-      <View style={[styles.container, { width: boardDim, height: boardDim }]} pointerEvents="box-only">
+      <View
+        style={[styles.container, { width: boardDim, height: boardDim }]}
+        {...panResponder.panHandlers}
+      >
         {Array(BOARD_SIZE).fill(null).map((_, r) =>
           Array(BOARD_SIZE).fill(null).map((_, c) => (
             <View
@@ -87,6 +92,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.24,
     shadowRadius: 18,
     elevation: 10,
+    alignSelf: 'center',
   },
   topRail: {
     flexDirection: 'row',
