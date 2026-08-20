@@ -27,41 +27,11 @@ export default function TabLayout() {
         tabBarLabelStyle: { fontSize: 10, fontWeight: '600' },
       }}
     >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Play',
-          tabBarIcon: ({ color, size }) => <MaterialIcons name="games" size={size} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="rewards"
-        options={{
-          title: 'Rewards',
-          tabBarIcon: ({ color, size }) => <MaterialIcons name="account-balance-wallet" size={size} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="referral"
-        options={{
-          title: 'Referral',
-          tabBarIcon: ({ color, size }) => <MaterialIcons name="group-add" size={size} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="leaderboard"
-        options={{
-          title: 'Levels',
-          tabBarIcon: ({ color, size }) => <MaterialIcons name="emoji-events" size={size} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="profile"
-        options={{
-          title: 'Profile',
-          tabBarIcon: ({ color, size }) => <MaterialIcons name="person" size={size} color={color} />,
-        }}
-      />
+      <Tabs.Screen name="index" options={{ title: 'Play', tabBarIcon: ({ color, size }) => <MaterialIcons name="games" size={size} color={color} /> }} />
+      <Tabs.Screen name="rewards" options={{ title: 'Rewards', tabBarIcon: ({ color, size }) => <MaterialIcons name="account-balance-wallet" size={size} color={color} /> }} />
+      <Tabs.Screen name="referral" options={{ title: 'Referral', tabBarIcon: ({ color, size }) => <MaterialIcons name="group-add" size={size} color={color} /> }} />
+      <Tabs.Screen name="leaderboard" options={{ title: 'Levels', tabBarIcon: ({ color, size }) => <MaterialIcons name="military-tech" size={size} color={color} /> }} />
+      <Tabs.Screen name="profile" options={{ title: 'Profile', tabBarIcon: ({ color, size }) => <MaterialIcons name="person-outline" size={size} color={color} /> }} />
     </Tabs>
   );
 }
