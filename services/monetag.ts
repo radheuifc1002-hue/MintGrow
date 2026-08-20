@@ -3,6 +3,21 @@
 import { supabase } from '@/services/supabase';
 import { FunctionsHttpError } from '@supabase/supabase-js';
 
+const DEFAULT_MONETAG_ZONE_ID = '11613357';
+const DEFAULT_MONETAG_SCRIPT_URL = 'https://niphausten.com/1/tag.min.js';
+
+const getConfiguredZoneId = () => (
+  process.env.EXPO_PUBLIC_MONETAG_ZONE_ID
+  || process.env.MONETAG_ZONE_ID
+  || DEFAULT_MONETAG_ZONE_ID
+);
+
+const getConfiguredPublisherId = () => (
+  process.env.EXPO_PUBLIC_MONETAG_PUBLISHER_ID
+  || process.env.MONETAG_PUBLISHER_ID
+  || ''
+);
+
 export interface AdResult {
   watched: boolean;
   error?: string;
@@ -43,11 +58,24 @@ export const getMonetazConfig = async (): Promise<{
         const text = await error.context?.text();
         console.error('Monetag edge fn error:', text);
       }
-      return null;
+      return {
+        publisherId: getConfiguredPublisherId(),
+        zoneId: getConfiguredZoneId(),
+        scriptUrl: DEFAULT_MONETAG_SCRIPT_URL,
+      };
     }
-    return data;
+
+    return {
+      publisherId: data?.publisherId || getConfiguredPublisherId(),
+      zoneId: data?.zoneId || getConfiguredZoneId(),
+      scriptUrl: data?.scriptUrl || DEFAULT_MONETAG_SCRIPT_URL,
+    };
   } catch {
-    return null;
+    return {
+      publisherId: getConfiguredPublisherId(),
+      zoneId: getConfiguredZoneId(),
+      scriptUrl: DEFAULT_MONETAG_SCRIPT_URL,
+    };
   }
 };
 
@@ -137,7 +165,7 @@ async function showMonetagInTelegramWeb(): Promise<AdResult> {
     script.setAttribute('data-zone', zoneId);
     script.setAttribute('data-mintgrow-monetag-zone', zoneId);
     script.setAttribute('async', 'true');
-    script.setAttribute('src', config?.scriptUrl || 'https://niphausten.com/1/tag.min.js');
+    script.setAttribute('src', config?.scriptUrl || DEFAULT_MONETAG_SCRIPT_URL);
 
     script.addEventListener('load', () => {
       setStatus('Loading ad creative...');
@@ -301,7 +329,7 @@ export const buildMonetazAdHtml = (publisherId: string, zoneId: string): string 
     // Load Monetag Telegram Mini App SDK
     var script = document.createElement('script');
     script.setAttribute('data-zone', zoneId);
-    script.src = 'https://niphausten.com/1/tag.min.js';
+    script.src = '${DEFAULT_MONETAG_SCRIPT_URL}';
     script.async = true;
 
     script.onload = function() {

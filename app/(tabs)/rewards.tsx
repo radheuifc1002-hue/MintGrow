@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput,
   KeyboardAvoidingView, Platform, Alert, Pressable,
@@ -6,17 +6,16 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useGame } from '@/hooks/useGame';
-import { useWithdrawal } from '@/hooks/useWithdrawal';
+import { isValidBep20Address, normalizeWalletAddress, useWithdrawal } from '@/hooks/useWithdrawal';
 import { GlowButton } from '@/components/ui/GlowButton';
 import { AdLoadingOverlay } from '@/components/ui/AdLoadingOverlay';
 import { Colors, Spacing, Radius, Typography } from '@/constants/theme';
-import { WITHDRAWAL_MIN, TOKEN_NETWORK } from '@/types/game';
-import { getProfile, subscribeWithdrawalUpdates } from '@/services/storage';
-import { WithdrawalRequest } from '@/types/game';
+import { WITHDRAWAL_MIN, TOKEN_NETWORK, WithdrawalRequest } from '@/types/game';
+import { subscribeWithdrawalUpdates } from '@/services/storage';
 
 export default function RewardsScreen() {
   const insets = useSafeAreaInsets();
-  const { profile, refreshProfile } = useGame();
+  const { profile, refreshProfile, setProfile } = useGame();
   const {
     withdrawals, isLoading, isWatchingAd, error,
     loadWithdrawals, requestWithdrawal, updateWallet, setError,
@@ -43,7 +42,7 @@ export default function RewardsScreen() {
         Alert.alert('Withdrawal Rejected', 'Your tokens have been refunded to your balance.');
       }
     });
-    return unsubscribe;
+    return () => { unsubscribe(); };
   }, [profile?.telegramId]);
 
   useEffect(() => {
@@ -51,14 +50,19 @@ export default function RewardsScreen() {
   }, [profile?.walletAddress]);
 
   const handleSaveWallet = async () => {
-    if (!walletInput.trim() || walletInput.length < 26) {
-      Alert.alert('Invalid Address', 'Please enter a valid BEP-20 wallet address (26+ chars)');
+    const normalized = normalizeWalletAddress(walletInput);
+    if (!isValidBep20Address(normalized)) {
+      Alert.alert('Invalid Address', 'Please enter a valid BEP-20 wallet address that starts with 0x and contains 40 hexadecimal characters.');
       return;
     }
-    const ok = await updateWallet(walletInput.trim());
+
+    const ok = await updateWallet(normalized);
     if (ok) {
+      setWalletInput(normalized);
+      if (profile) setProfile({ ...profile, walletAddress: normalized });
       setSavedWallet(true);
-      refreshProfile();
+      await refreshProfile();
+      Alert.alert('Wallet Saved', 'Your BEP-20 wallet address has been updated.');
       setTimeout(() => setSavedWallet(false), 3000);
     }
   };
@@ -151,15 +155,18 @@ export default function RewardsScreen() {
               <TextInput
                 style={styles.input}
                 value={walletInput}
-                onChangeText={setWalletInput}
+                onChangeText={(text) => { setWalletInput(text); setError(null); }}
                 placeholder="0x... BEP-20 address"
                 placeholderTextColor={Colors.textMuted}
                 autoCapitalize="none"
                 autoCorrect={false}
+                inputMode="text"
               />
               <GlowButton
                 label={savedWallet ? '✓' : 'Save'}
                 onPress={handleSaveWallet}
+                loading={isLoading}
+                disabled={isLoading}
                 variant={savedWallet ? 'primary' : 'secondary'}
                 style={styles.saveBtn}
               />
