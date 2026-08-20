@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { Platform } from 'react-native';
+import { preloadAd } from '@/services/monetag';
 
 type TelegramWebAppWithControls = {
   ready?: () => void;
@@ -8,8 +9,6 @@ type TelegramWebAppWithControls = {
 };
 
 const TELEGRAM_WEB_APP_SCRIPT_ID = 'telegram-web-app-sdk';
-const MONETAG_SDK_SCRIPT_ID = 'monetag-tma-sdk';
-const MONETAG_ZONE_ID = process.env.EXPO_PUBLIC_MONETAG_ZONE_ID || '11613357';
 
 export function TelegramMiniAppBridge() {
   useEffect(() => {
@@ -22,14 +21,7 @@ export function TelegramMiniAppBridge() {
       webApp?.disableVerticalSwipes?.();
     };
 
-    if (!document.getElementById(MONETAG_SDK_SCRIPT_ID) && MONETAG_ZONE_ID) {
-      const monetagScript = document.createElement('script');
-      monetagScript.id = MONETAG_SDK_SCRIPT_ID;
-      monetagScript.src = 'https://niphausten.com/1/tag.min.js';
-      monetagScript.async = true;
-      monetagScript.setAttribute('data-zone', MONETAG_ZONE_ID);
-      document.head.appendChild(monetagScript);
-    }
+    void preloadAd();
 
     if (document.getElementById(TELEGRAM_WEB_APP_SCRIPT_ID)) {
       initializeTelegram();
