@@ -23,6 +23,8 @@ export interface AdResult {
   error?: string;
 }
 
+type MonetagAdFormat = 'rewarded' | 'popup' | 'inApp';
+
 // Callbacks set by the MonetazAdWebView component
 let _resolveAd: ((result: AdResult) => void) | null = null;
 let _showAdTrigger: (() => void) | null = null;
@@ -79,7 +81,7 @@ export const getMonetazConfig = async (): Promise<{
   }
 };
 
-async function showMonetagInTelegramWeb(): Promise<AdResult> {
+async function showMonetagInTelegramWeb(format: MonetagAdFormat = 'rewarded'): Promise<AdResult> {
   if (typeof window === 'undefined' || typeof document === 'undefined') {
     return { watched: false, error: 'Browser runtime is unavailable' };
   }
@@ -143,10 +145,28 @@ async function showMonetagInTelegramWeb(): Promise<AdResult> {
       if (typeof showFn !== 'function') return false;
 
       setStatus('Showing Telegram Mini App ad...');
-      Promise.resolve((showFn as () => Promise<void>)())
+      const args = format === 'popup'
+        ? ['pop']
+        : format === 'inApp'
+          ? [{ type: 'inApp', inAppSettings: { frequency: 2, capping: 0.1, interval: 30, timeout: 5, everyPage: false } }]
+          : [];
+      Promise.resolve((showFn as (...args: unknown[]) => Promise<void> | void)(...args))
         .then(() => finish({ watched: true }))
         .catch(() => finish({ watched: false, error: 'Ad was closed before completion' }));
       return true;
+    };
+
+    const pollForAd = (maxAttempts = 60, intervalMs = 250) => {
+      let attempts = 0;
+      const poll = setInterval(() => {
+        attempts += 1;
+        if (tryShowAd()) {
+          clearInterval(poll);
+        } else if (attempts >= maxAttempts) {
+          clearInterval(poll);
+          finishUnavailable('Monetag SDK did not expose an ad for this zone.');
+        }
+      }, intervalMs);
     };
 
     const tg = (window as unknown as { Telegram?: { WebApp?: { ready?: () => void; expand?: () => void } } }).Telegram?.WebApp;
@@ -160,7 +180,7 @@ async function showMonetagInTelegramWeb(): Promise<AdResult> {
 
     if (tryShowAd()) return;
 
-    const existing = document.querySelector(`script[data-mintgrow-monetag-zone="${zoneId}"]`);
+    const existing = document.querySelector(`script[data-mintgrow-monetag-zone="${zoneId}"], script[data-zone="${zoneId}"]`);
     const script = existing || document.createElement('script');
     script.setAttribute('data-zone', zoneId);
     script.setAttribute('data-mintgrow-monetag-zone', zoneId);
@@ -169,29 +189,26 @@ async function showMonetagInTelegramWeb(): Promise<AdResult> {
 
     script.addEventListener('load', () => {
       setStatus('Loading ad creative...');
-      let attempts = 0;
-      const poll = setInterval(() => {
-        attempts += 1;
-        if (tryShowAd()) {
-          clearInterval(poll);
-        } else if (attempts > 20) {
-          clearInterval(poll);
-          finishUnavailable('Monetag SDK did not expose an ad for this zone.');
-        }
-      }, 250);
+      pollForAd();
     }, { once: true });
     script.addEventListener('error', () => finishUnavailable('Monetag SDK failed to load.'), { once: true });
 
-    if (!existing) document.head.appendChild(script);
+    if (!existing) {
+      document.head.appendChild(script);
+    } else {
+      setStatus('Using preloaded Monetag SDK...');
+      pollForAd();
+    }
+
     fallbackTimer = setTimeout(() => {
       if (!done && !tryShowAd()) finishUnavailable('Monetag SDK timed out.');
-    }, 7000);
+    }, 15000);
   });
 }
 
-export const showRewardedAd = (): Promise<AdResult> => {
+export const showRewardedAd = (format: MonetagAdFormat = 'rewarded'): Promise<AdResult> => {
   if (typeof window !== 'undefined' && typeof document !== 'undefined') {
-    return showMonetagInTelegramWeb();
+    return showMonetagInTelegramWeb(format);
   }
 
   return new Promise((resolve) => {
@@ -205,7 +222,11 @@ export const showRewardedAd = (): Promise<AdResult> => {
 };
 
 export const showInterstitialAd = (): Promise<AdResult> => {
-  return showRewardedAd();
+  return showRewardedAd('inApp');
+};
+
+export const showRegistrationAd = (): Promise<AdResult> => {
+  return showRewardedAd('popup');
 };
 
 export const preloadAd = async (): Promise<void> => {};

@@ -34,6 +34,7 @@ export const createDefaultProfile = (telegramId: string, username: string): Play
   lastLoginDate: undefined,
   loginStreak: 0,
   powerUps: { ...DEFAULT_POWER_UPS },
+  isRegistered: false,
 });
 
 const mapRowToProfile = (row: any): PlayerProfile => ({
@@ -54,6 +55,7 @@ const mapRowToProfile = (row: any): PlayerProfile => ({
   lastLoginDate: row.last_login_date ?? undefined,
   loginStreak: row.login_streak ?? 0,
   powerUps: row.power_ups ?? { ...DEFAULT_POWER_UPS },
+  isRegistered: row.is_registered ?? true,
 });
 
 const profileToRow = (p: PlayerProfile) => ({
@@ -393,10 +395,15 @@ export const getLeaderboard = async (limit = 50): Promise<LeaderboardEntry[]> =>
     const { data, error } = await supabase
       .from('players')
       .select('telegram_id, username, total_tokens, level, best_score')
+      .not('username', 'is', null)
       .order('total_tokens', { ascending: false })
-      .limit(limit);
-    if (error || !data) return [];
-    return data.map((row, i) => ({
+      .order('best_score', { ascending: false })
+      .limit(Math.min(Math.max(limit, 1), 100));
+    if (error || !data) {
+      if (error) console.error('Failed to load leaderboard:', error.message);
+      return [];
+    }
+    return (data as any[]).map((row, i) => ({
       rank: i + 1,
       telegramId: row.telegram_id,
       username: row.username,
@@ -409,14 +416,31 @@ export const getLeaderboard = async (limit = 50): Promise<LeaderboardEntry[]> =>
 
 export const getPlayerRank = async (telegramId: string): Promise<number | null> => {
   try {
-    const { data, error } = await supabase
+    const { data: player, error: playerError } = await supabase
       .from('players')
-      .select('telegram_id, total_tokens')
-      .order('total_tokens', { ascending: false });
-    if (error || !data) return null;
-    const idx = data.findIndex(r => r.telegram_id === telegramId);
-    return idx >= 0 ? idx + 1 : null;
-  } catch { return null; }
+      .select('total_tokens')
+      .eq('telegram_id', telegramId)
+      .single();
+    if (playerError || !player) {
+      if (playerError) console.error('Failed to load player rank row:', playerError.message);
+      return null;
+    }
+
+    const totalTokens = parseFloat((player as any).total_tokens ?? '0');
+    const { count, error: countError } = await supabase
+      .from('players')
+      .select('telegram_id', { count: 'exact', head: true })
+      .gt('total_tokens', totalTokens);
+    if (countError) {
+      console.error('Failed to count leaderboard rank:', countError.message);
+      return null;
+    }
+
+    return (count ?? 0) + 1;
+  } catch (error) {
+    console.error('Failed to load player rank:', error);
+    return null;
+  }
 };
 
 // ─── Withdrawal real-time subscription ───────────────────────────────────────

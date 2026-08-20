@@ -1,12 +1,12 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Image } from 'expo-image';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useGame } from '@/hooks/useGame';
 import { Colors, Spacing, Radius, Typography } from '@/constants/theme';
-import { ADMIN_TELEGRAM_ID, LEVEL_REWARDS, TOKEN_NETWORK, WITHDRAWAL_MIN } from '@/types/game';
+import { LEVEL_REWARDS, TOKEN_NETWORK, WITHDRAWAL_MIN } from '@/types/game';
 import { TokenBadge } from '@/components/ui/TokenBadge';
 
 export default function ProfileScreen() {
@@ -17,24 +17,7 @@ export default function ProfileScreen() {
   const currentReward = LEVEL_REWARDS.find(r => r.level === level);
 
   const handleAdminAccess = () => {
-    Alert.prompt(
-      'Admin Access',
-      'Enter admin Telegram ID:',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Access',
-          onPress: (val?: string) => {
-            if (val?.trim() === ADMIN_TELEGRAM_ID || val?.trim() === `@${ADMIN_TELEGRAM_ID}`) {
-              router.push('/admin');
-            } else {
-              Alert.alert('Access Denied', 'Invalid admin credentials');
-            }
-          },
-        },
-      ],
-      'plain-text', '', 'default'
-    );
+    router.push('/admin-panel' as any);
   };
 
   const stats = [
