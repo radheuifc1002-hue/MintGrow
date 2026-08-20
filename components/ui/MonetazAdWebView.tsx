@@ -21,9 +21,9 @@ export function MonetazAdWebView({ onDismiss }: Props) {
 
     getMonetazConfig().then(config => {
       if (config) {
-        setAdHtml(buildMonetazAdHtml(config.publisherId, config.zoneId));
+        setAdHtml(buildMonetazAdHtml(config.zoneId));
       } else {
-        setAdHtml(buildMonetazAdHtml('0', '0'));
+        setAdHtml(buildMonetazAdHtml());
       }
     });
   }, []);
@@ -32,7 +32,7 @@ export function MonetazAdWebView({ onDismiss }: Props) {
     setShowWebView(true);
   }, []);
 
-  const handleResolve = useCallback((result: { watched: boolean }) => {
+  const handleResolve = useCallback((result: { watched: boolean; error?: string }) => {
     setShowWebView(false);
     onDismiss?.();
     resolveAdFromBridge(result);
@@ -50,7 +50,7 @@ export function MonetazAdWebView({ onDismiss }: Props) {
       visible={showWebView}
       transparent={false}
       animationType="slide"
-      onRequestClose={() => handleResolve({ watched: true })}
+      onRequestClose={() => handleResolve({ watched: false, error: 'ad_closed' })}
     >
       <View style={styles.container}>
         <WebView
@@ -67,14 +67,14 @@ export function MonetazAdWebView({ onDismiss }: Props) {
               if (data.type === 'AD_REWARD') {
                 handleResolve({ watched: true });
               } else if (data.type === 'AD_CLOSED') {
-                handleResolve({ watched: false });
+                handleResolve({ watched: false, error: data.error || 'ad_rejected' });
               }
             } catch {
               handleResolve({ watched: false });
             }
           }}
-          onError={() => handleResolve({ watched: true })}
-          onHttpError={() => handleResolve({ watched: true })}
+          onError={() => handleResolve({ watched: false, error: 'sdk_load_error' })}
+          onHttpError={() => handleResolve({ watched: false, error: 'network_error' })}
         />
       </View>
     </Modal>

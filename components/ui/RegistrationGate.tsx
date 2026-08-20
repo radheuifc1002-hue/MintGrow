@@ -44,7 +44,7 @@ export function RegistrationGate() {
       if (result.watched) {
         // Mark as registered
         const p = await getProfile();
-        if (p) {
+        if (p && p.isRegistered !== true) {
           p.username = cleanUsername;
           p.isRegistered = true;
           // Give welcome bonus once after the registration ad completes.

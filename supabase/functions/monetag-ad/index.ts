@@ -6,31 +6,25 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
+const DEFAULT_MONETAG_ZONE_ID = '11613357';
+const MONETAG_SCRIPT_URL = 'https://libtl.com/sdk.js';
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   try {
-    const publisherId = Deno.env.get('MONETAG_PUBLISHER_ID') ?? '';
-    const zoneId = Deno.env.get('MONETAG_ZONE_ID') ?? '';
-
-    if (!publisherId || !zoneId) {
-      return new Response(
-        JSON.stringify({ error: 'Monetag credentials not configured' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
     const { action } = await req.json().catch(() => ({ action: 'get_config' }));
 
     if (action === 'get_config') {
-      // Return config securely — never expose raw keys to client
+      const zoneId = Deno.env.get('MONETAG_ZONE_ID') || DEFAULT_MONETAG_ZONE_ID;
+
       return new Response(
         JSON.stringify({
-          publisherId,
           zoneId,
-          scriptUrl: 'https://niphausten.com/1/tag.min.js',
+          sdkFunction: `show_${zoneId}`,
+          scriptUrl: MONETAG_SCRIPT_URL,
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
@@ -40,11 +34,10 @@ serve(async (req) => {
       JSON.stringify({ error: 'Unknown action' }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
-
   } catch (err) {
     console.error('monetag-ad error:', err);
     return new Response(
-      JSON.stringify({ error: String(err) }),
+      JSON.stringify({ error: 'Unable to load Monetag configuration' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }

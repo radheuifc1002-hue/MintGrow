@@ -62,8 +62,7 @@ SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
 VERCEL_MINI_APP_URL=https://<your-vercel-domain>
 RAILWAY_BOT_URL=https://<your-railway-domain>
 TELEGRAM_BOT_TOKEN=<botfather-token>
-MONETAG_ZONE_ID=<zone-id>
-MONETAG_PUBLISHER_ID=<publisher-id>
+MONETAG_ZONE_ID=11613357
 ```
 
 ---
@@ -152,8 +151,7 @@ supabase functions deploy telegram-bot
 Set Supabase function secrets:
 
 ```bash
-supabase secrets set MONETAG_PUBLISHER_ID=<publisher-id>
-supabase secrets set MONETAG_ZONE_ID=<zone-id>
+supabase secrets set MONETAG_ZONE_ID=11613357
 supabase secrets set TELEGRAM_BOT_TOKEN=<telegram-bot-token>
 supabase secrets set MINI_APP_URL=<vercel-mini-app-url>
 ```
@@ -204,8 +202,7 @@ Set these for **Production**, **Preview**, and **Development** as appropriate:
 ```bash
 EXPO_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co
 EXPO_PUBLIC_SUPABASE_ANON_KEY=<supabase-anon-key>
-EXPO_PUBLIC_MONETAG_ZONE_ID=<monetag-zone-id>
-EXPO_PUBLIC_MONETAG_PUBLISHER_ID=<monetag-publisher-id>
+EXPO_PUBLIC_MONETAG_ZONE_ID=11613357
 EXPO_PUBLIC_ADMIN_EMAIL=<admin-email>
 EXPO_PUBLIC_ADMIN_PASSWORD=<strong-admin-password>
 ```
@@ -440,15 +437,13 @@ The app tries to load the Monetag SDK script and call the zone-specific show fun
 Set in Supabase Edge Function secrets:
 
 ```bash
-MONETAG_PUBLISHER_ID=<publisher-id>
-MONETAG_ZONE_ID=<zone-id>
+MONETAG_ZONE_ID=11613357
 ```
 
 Set in Vercel as public fallback values:
 
 ```bash
-EXPO_PUBLIC_MONETAG_PUBLISHER_ID=<publisher-id>
-EXPO_PUBLIC_MONETAG_ZONE_ID=<zone-id>
+EXPO_PUBLIC_MONETAG_ZONE_ID=11613357
 ```
 
 ### 7.4 Why ads often fail in Vercel preview
@@ -555,10 +550,8 @@ Check:
 | `TELEGRAM_BOT_TOKEN` | Never | Yes | Optional if using Supabase bot function | Server only. |
 | `MINI_APP_URL` | No | Yes | Optional | Must equal Vercel production URL. |
 | `BOT_USERNAME` | No | Yes | No | Used for referral links. |
-| `EXPO_PUBLIC_MONETAG_ZONE_ID` | Yes | No | No | Browser fallback. |
-| `EXPO_PUBLIC_MONETAG_PUBLISHER_ID` | Yes | No | No | Browser fallback. |
-| `MONETAG_ZONE_ID` | No | No | Yes | Edge Function config. |
-| `MONETAG_PUBLISHER_ID` | No | No | Yes | Edge Function config. |
+| `EXPO_PUBLIC_MONETAG_ZONE_ID` | Optional | No | No | Browser-safe TMA zone override; defaults to `11613357`. |
+| `MONETAG_ZONE_ID` | No | No | Optional | Edge Function compatibility config; defaults to `11613357`. |
 | `EXPO_PUBLIC_ADMIN_EMAIL` | Yes | No | No | Current client-side admin login. Harden later. |
 | `EXPO_PUBLIC_ADMIN_PASSWORD` | Yes | No | No | Temporary only; replace with server-side auth/admin roles. |
 

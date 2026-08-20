@@ -45,9 +45,7 @@ This registers your Railway server as the Telegram webhook. You should see:
 ## 4. Supabase Edge Functions (Monetag Ads)
 
 The `supabase/functions/monetag-ad` function is auto-deployed via Supabase.
-Make sure these secrets are set in Supabase Dashboard → Edge Functions → Secrets:
-- `MONETAG_PUBLISHER_ID`
-- `MONETAG_ZONE_ID`
+This compatibility function returns the public TMA config. It does not require `MONETAG_PUBLISHER_ID`. Optionally set `MONETAG_ZONE_ID=11613357`; otherwise the function defaults to the publisher-supplied TMA zone.
 
 ## 5. Telegram Mini App (Web, native to Telegram)
 
@@ -86,7 +84,7 @@ Telegram Bot API
      └──▶ Mini App ──▶ Expo React Native App
                               │
                               ├──▶ Supabase DB (player data)
-                              ├──▶ Supabase Edge Functions (Monetag ads)
+                              ├──▶ Monetag TMA SDK (ads)
                               └──▶ Admin Panel (withdrawal approval)
 ```
 
@@ -100,13 +98,12 @@ Telegram Bot API
 
 ## 8. Monetag Telegram ads
 
-Set Supabase Edge Function secrets:
+The publisher-supplied Telegram Mini App snippet is:
 
-```bash
-MONETAG_PUBLISHER_ID=<from Monetag>
-MONETAG_ZONE_ID=<Telegram Mini App zone id>
+```html
+<script src='//libtl.com/sdk.js' data-zone='11613357' data-sdk='show_11613357'></script>
 ```
 
-The app loads `https://niphausten.com/1/tag.min.js` with `data-zone` and calls `window.show_<ZONE_ID>()` from the Telegram Mini App web runtime.
+The app loads `https://libtl.com/sdk.js` with `data-zone="11613357"` and `data-sdk="show_11613357"`, then calls `window.show_11613357()` from the Telegram Mini App web runtime. `MONETAG_PUBLISHER_ID` is not required for this TMA SDK integration. Optionally set `EXPO_PUBLIC_MONETAG_ZONE_ID=11613357` for frontend configuration or `MONETAG_ZONE_ID=11613357` for the compatibility Edge Function.
 
 Production note: Monetag failures do not grant ad rewards in production. The local countdown reward is only for non-production preview/testing when the ad network cannot be reached.
