@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, Pressable, Alert, ScrollView
+  View, Text, StyleSheet, Pressable, Alert
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -91,20 +91,14 @@ export default function GameScreen() {
   }, [activatePowerUp, refreshProfile]);
 
   return (
-    <LinearGradient colors={['#06251A', '#0B3D2B', '#F4FFF8']} style={[styles.container, { paddingTop: insets.top }]}>
-      <ScrollView
-        contentContainerStyle={styles.playfield}
-        showsVerticalScrollIndicator={false}
-        scrollEnabled={false}
-        bounces={false}
-        alwaysBounceVertical={false}
-        alwaysBounceHorizontal={false}
-        directionalLockEnabled
-        overScrollMode="never"
-      >
+    <LinearGradient
+      colors={['#06251A', '#0B3D2B', '#F4FFF8']}
+      style={[styles.container, { paddingTop: insets.top }]}
+    >
+      <View style={styles.playfield}>
         <View style={styles.hero}>
           <View style={styles.logoRow}>
-            <BrandMark size={52} />
+            <BrandMark size={44} />
             <View>
               <Text style={styles.logo}>MintGrow</Text>
               <Text style={styles.tagline}>Block Puzzle Arena</Text>
@@ -145,7 +139,7 @@ export default function GameScreen() {
           <View style={styles.missionItem}><Text style={styles.missionIcon}>🎲</Text><Text style={styles.missionText}>Random MG rewards</Text></View>
           <View style={styles.missionItem}><Text style={styles.missionIcon}>🏦</Text><Text style={styles.missionText}>Withdraw BEP-20</Text></View>
         </View>
-      </ScrollView>
+      </View>
 
       <PowerUpBar onWatchAd={handlePowerUpPress} onSpendTokens={handlePowerUpTokens} loading={loadingPowerUp} />
 
@@ -187,35 +181,35 @@ const lStyles = StyleSheet.create({
 });
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  playfield: { padding: Spacing.md, paddingBottom: Spacing.lg, gap: Spacing.md, flexGrow: 1 },
-  hero: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: Spacing.sm },
-  logoRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-  logo: { fontSize: 24, fontWeight: '900', color: '#FFFFFF', letterSpacing: 0.4 },
-  tagline: { ...Typography.caption, color: '#B7F7D7', textTransform: 'uppercase', letterSpacing: 1.4 },
+  container: { flex: 1, minHeight: 0, overflow: 'hidden' },
+  playfield: { flex: 1, minHeight: 0, padding: Spacing.sm, gap: Spacing.sm },
+  hero: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 2 },
+  logoRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  logo: { fontSize: 22, fontWeight: '900', color: '#FFFFFF', letterSpacing: 0.4 },
+  tagline: { ...Typography.caption, color: '#B7F7D7', textTransform: 'uppercase', letterSpacing: 1.2 },
   newGameBtn: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: '#B8FFD9',
-    borderRadius: Radius.full, paddingVertical: 10, paddingHorizontal: 14, gap: 5,
+    borderRadius: Radius.full, paddingVertical: 8, paddingHorizontal: 12, gap: 5,
     shadowColor: '#000', shadowOpacity: 0.22, shadowRadius: 10, elevation: 6,
   },
   newGameText: { ...Typography.smallBold, color: '#06251A' },
   arenaCard: {
-    backgroundColor: 'rgba(255,255,255,0.96)', borderRadius: 28, padding: Spacing.md,
+    flex: 1, minHeight: 0, backgroundColor: 'rgba(255,255,255,0.96)', borderRadius: 24, padding: Spacing.sm,
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.8)', shadowColor: '#00180F',
     shadowOpacity: 0.24, shadowRadius: 22, shadowOffset: { width: 0, height: 14 }, elevation: 10,
   },
-  stageHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.sm },
-  stageLabel: { ...Typography.caption, color: Colors.primary, letterSpacing: 1.6, textTransform: 'uppercase' },
-  stageTitle: { fontSize: 20, fontWeight: '900', color: Colors.textPrimary },
-  levelPill: { backgroundColor: Colors.primary, paddingHorizontal: 12, paddingVertical: 8, borderRadius: Radius.full },
+  stageHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  stageLabel: { ...Typography.caption, color: Colors.primary, letterSpacing: 1.4, textTransform: 'uppercase' },
+  stageTitle: { fontSize: 18, fontWeight: '900', color: Colors.textPrimary },
+  levelPill: { backgroundColor: Colors.primary, paddingHorizontal: 10, paddingVertical: 6, borderRadius: Radius.full },
   levelPillText: { ...Typography.smallBold, color: '#fff' },
-  scoreRow: { flexDirection: 'row', gap: Spacing.sm, paddingVertical: Spacing.sm },
-  boardWrapper: { justifyContent: 'center', alignItems: 'center', paddingVertical: Spacing.md },
+  scoreRow: { flexDirection: 'row', gap: 6, paddingVertical: 5 },
+  boardWrapper: { flex: 1, minHeight: 0, justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
   missionStrip: {
     flexDirection: 'row', gap: Spacing.sm, backgroundColor: 'rgba(6,37,26,0.9)',
-    borderRadius: Radius.xl, padding: Spacing.sm, borderWidth: 1, borderColor: 'rgba(184,255,217,0.25)',
+    borderRadius: Radius.xl, padding: 6, borderWidth: 1, borderColor: 'rgba(184,255,217,0.25)',
   },
-  missionItem: { flex: 1, alignItems: 'center', gap: 3 },
-  missionIcon: { fontSize: 18 },
+  missionItem: { flex: 1, alignItems: 'center', gap: 2 },
+  missionIcon: { fontSize: 16 },
   missionText: { ...Typography.caption, color: '#DFFFF0', textAlign: 'center' },
 });
