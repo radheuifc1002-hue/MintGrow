@@ -62,7 +62,6 @@ export default function GameScreen() {
       if (!ok) Alert.alert('Could not activate', 'This power-up could not be used right now.');
       return;
     }
-    // Watch ad to earn one and immediately use it
     setLoadingPowerUp(type);
     setAdLoading(true);
     try {
@@ -93,7 +92,16 @@ export default function GameScreen() {
 
   return (
     <LinearGradient colors={['#06251A', '#0B3D2B', '#F4FFF8']} style={[styles.container, { paddingTop: insets.top }]}>
-      <ScrollView contentContainerStyle={styles.playfield} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.playfield}
+        showsVerticalScrollIndicator={false}
+        scrollEnabled={false}
+        bounces={false}
+        alwaysBounceVertical={false}
+        alwaysBounceHorizontal={false}
+        directionalLockEnabled
+        overScrollMode="never"
+      >
         <View style={styles.hero}>
           <View style={styles.logoRow}>
             <BrandMark size={52} />
@@ -141,7 +149,6 @@ export default function GameScreen() {
 
       <PowerUpBar onWatchAd={handlePowerUpPress} onSpendTokens={handlePowerUpTokens} loading={loadingPowerUp} />
 
-      {/* Modals */}
       <GameOverModal />
       <LevelUpModal />
       <NewTileModal visible={newTierValue !== null} tileValue={newTierValue ?? 4} onDismiss={dismissNewTier} />
@@ -181,7 +188,7 @@ const lStyles = StyleSheet.create({
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  playfield: { padding: Spacing.md, paddingBottom: Spacing.lg, gap: Spacing.md },
+  playfield: { padding: Spacing.md, paddingBottom: Spacing.lg, gap: Spacing.md, flexGrow: 1 },
   hero: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: Spacing.sm },
   logoRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   logo: { fontSize: 24, fontWeight: '900', color: '#FFFFFF', letterSpacing: 0.4 },
