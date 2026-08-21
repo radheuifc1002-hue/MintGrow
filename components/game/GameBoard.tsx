@@ -5,15 +5,15 @@ import { GameTile } from './GameTile';
 import { Typography } from '@/constants/theme';
 
 const BOARD_SIZE = 4;
-const GAP = 9;
+const GAP = 7;
 
 function getBoardMetrics(width: number, height: number) {
-  // Telegram Mini App geometry: maximize the board within the available width,
-  // while keeping a conservative height ceiling so the entire grid remains usable.
-  const widthLimit = Math.max(286, width - 50);
-  const heightLimit = Math.max(286, height * 0.54);
-  const boardW = Math.min(widthLimit, heightLimit, 680);
-  const tileSize = Math.max(54, Math.floor((boardW - GAP * (BOARD_SIZE + 1)) / BOARD_SIZE));
+  const compact = height < 780;
+  const ultraCompact = height < 680;
+  const widthLimit = Math.max(260, width - (compact ? 30 : 46));
+  const heightLimit = Math.max(260, height * (ultraCompact ? 0.37 : compact ? 0.40 : 0.47));
+  const boardW = Math.min(widthLimit, heightLimit, compact ? 430 : 560);
+  const tileSize = Math.max(48, Math.floor((boardW - GAP * (BOARD_SIZE + 1)) / BOARD_SIZE));
   const boardDim = tileSize * BOARD_SIZE + GAP * (BOARD_SIZE + 1);
   return { tileSize, boardDim };
 }
@@ -37,7 +37,7 @@ export function GameBoard() {
   })).current;
 
   return (
-    <View style={[styles.frame, { width: boardDim + 14 }]}>
+    <View style={[styles.frame, { width: boardDim + 10 }]}>
       <View style={styles.topRail} pointerEvents="none">
         <View style={styles.railTitle}><View style={styles.railMark} /><Text style={styles.railText}>SWIPE TO MERGE</Text></View>
         <View style={styles.railDot} />
@@ -53,10 +53,10 @@ export function GameBoard() {
 }
 
 const styles = StyleSheet.create({
-  frame: { backgroundColor: '#062A1D', borderRadius: 30, padding: 7, borderWidth: 2, borderColor: '#20D99A', shadowColor: '#00A86B', shadowOpacity: 0.24, shadowRadius: 15, elevation: 8, alignSelf: 'center' },
-  topRail: { height: 28, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 7 },
-  railTitle: { flexDirection: 'row', alignItems: 'center', gap: 7 }, railMark: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#31EBAA' },
-  railText: { ...Typography.caption, color: '#D4FFE8', letterSpacing: 1.05, fontWeight: '900' }, railDot: { width: 9, height: 9, borderRadius: 5, backgroundColor: '#31EBAA' },
-  container: { backgroundColor: '#0C3A2A', borderRadius: 21, position: 'relative', borderWidth: 1, borderColor: 'rgba(184,255,217,0.30)' },
-  emptyCell: { position: 'absolute', backgroundColor: 'rgba(255,255,255,0.055)', borderRadius: 13, borderWidth: 1, borderColor: 'rgba(184,255,217,0.17)' },
+  frame: { backgroundColor: '#062A1D', borderRadius: 25, padding: 5, borderWidth: 2, borderColor: '#20D99A', shadowColor: '#00A86B', shadowOpacity: 0.20, shadowRadius: 12, elevation: 7, alignSelf: 'center' },
+  topRail: { height: 24, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 6 },
+  railTitle: { flexDirection: 'row', alignItems: 'center', gap: 6 }, railMark: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#31EBAA' },
+  railText: { ...Typography.caption, color: '#D4FFE8', letterSpacing: 0.9, fontWeight: '900' }, railDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#31EBAA' },
+  container: { backgroundColor: '#0C3A2A', borderRadius: 18, position: 'relative', borderWidth: 1, borderColor: 'rgba(184,255,217,0.30)' },
+  emptyCell: { position: 'absolute', backgroundColor: 'rgba(255,255,255,0.055)', borderRadius: 11, borderWidth: 1, borderColor: 'rgba(184,255,217,0.17)' },
 });
