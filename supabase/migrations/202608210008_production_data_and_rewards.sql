@@ -3,11 +3,9 @@
 -- It preserves auth.users and public.admin_users.
 
 -- Reset known test application data first.
-truncate table public.referrals;
-truncate table public.ad_events;
-truncate table public.game_sessions;
-truncate table public.withdrawals;
-truncate table public.players;
+-- All application child tables are listed in the same TRUNCATE statement so
+-- PostgreSQL's foreign-key dependency checks are satisfied without CASCADE.
+truncate table public.referrals, public.ad_events, public.game_sessions, public.withdrawals, public.players;
 
 -- Production identity invariants.
 create unique index if not exists players_telegram_id_uidx
@@ -117,7 +115,7 @@ begin
   update public.players set total_tokens=round(total_tokens+p_amount,2),
     best_score=greatest(best_score,coalesce(p_best_score,best_score)), level=greatest(level,coalesce(p_level,level))
   where telegram_id=p_telegram_id returning * into updated_player;
-  if updated_player.telegram_id is null then raise exception 'Player % not found',p_telegram_id; end if;
+  if updated_player.telegram_id is null then raise exception 'Player % not found', p_telegram_id; end if;
   return updated_player;
 end;
 $$;
