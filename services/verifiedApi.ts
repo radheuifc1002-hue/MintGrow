@@ -22,12 +22,41 @@ export const getTelegramInitData = (): string | null => {
   return initData && initData.length > 0 ? initData : null;
 };
 
+const readFunctionError = async (error: any): Promise<string> => {
+  try {
+    const response = error?.context;
+    if (response && typeof response.clone === 'function') {
+      const clone = response.clone();
+      const contentType = clone.headers?.get?.('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const body = await clone.json();
+        if (body?.error) return String(body.error);
+        if (body?.message) return String(body.message);
+      } else {
+        const text = (await clone.text()).trim();
+        if (text) return text.slice(0, 500);
+      }
+    }
+  } catch {
+    // Fall back to the SDK error message below.
+  }
+  return String(error?.message || 'MintGrow API request failed');
+};
+
 export const verifiedApi = async <T = unknown>(action: VerifiedApiAction, params: Record<string, unknown> = {}): Promise<T> => {
   const initData = getTelegramInitData();
   if (!initData) throw new Error('Telegram Mini App identity is unavailable. Open MintGrow inside Telegram.');
 
   const { data, error } = await supabase.functions.invoke('mintgrow-api', { body: { action, initData, params } });
-  if (error) throw new Error(error.message || 'MintGrow API request failed');
-  if (!data || data.error) throw new Error(data?.error || 'MintGrow API request failed');
+  if (error) {
+    const message = await readFunctionError(error);
+    console.error(`[MintGrow API] ${action}: ${message}`);
+    throw new Error(message);
+  }
+  if (!data || data.error) {
+    const message = String(data?.error || 'MintGrow API request failed');
+    console.error(`[MintGrow API] ${action}: ${message}`);
+    throw new Error(message);
+  }
   return data.data as T;
 };
