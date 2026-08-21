@@ -7,8 +7,9 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { usePathname } from 'expo-router';
 import { Colors, Spacing, Radius, Typography } from '@/constants/theme';
 import { useGame } from '@/hooks/useGame';
-import { recordAdEvent, showRewardedAd } from '@/services/monetag';
-import { supabase } from '@/services/supabase';
+import { showRewardedAd } from '@/services/monetag';
+import { recordAdEventInDatabase } from '@/services/database';
+import { completeRegistrationInDatabase } from '@/services/registration';
 import { AdLoadingOverlay } from './AdLoadingOverlay';
 
 export function RegistrationGate() {
@@ -20,9 +21,6 @@ export function RegistrationGate() {
   const [username, setUsername] = useState('');
   const [error, setError] = useState<string | null>(null);
 
-  // Admin routes have their own authentication/authorization flow. The player
-  // registration ad must never cover the admin panel, even if the current
-  // Telegram player has not completed registration.
   const isAdminRoute = pathname === '/admin' || pathname.startsWith('/admin-panel');
 
   useEffect(() => {
@@ -52,35 +50,30 @@ export function RegistrationGate() {
 
     try {
       const result = await showRewardedAd('rewarded');
-      await recordAdEvent('registration', result, result.watched ? 100 : 0, profile.telegramId);
+      const clientEventId = `ad_${profile.telegramId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const recorded = await recordAdEventInDatabase({
+        telegramId: profile.telegramId,
+        clientEventId,
+        placement: 'registration',
+        watched: result.watched,
+        rewardTokens: result.watched ? 100 : 0,
+        error: result.error || result.reason || null,
+      });
 
+      if (!recorded) throw new Error('The ad result could not be saved. Please try again.');
       if (!result.watched) {
         setError(result.error || 'The ad was not completed. Please try again.');
         return;
       }
 
-      const { data, error: saveError } = await supabase
-        .from('players')
-        .update({
-          username: cleanUsername,
-          is_registered: true,
-          total_tokens: Math.max(profile.totalTokens, 100),
-          ads_watched: (profile.adsWatched || 0) + 1,
-        })
-        .eq('telegram_id', profile.telegramId)
-        .select('*')
-        .single();
-
-      if (saveError || !data) {
-        console.error('Registration Supabase update failed:', saveError?.message);
-        throw new Error(saveError?.message || 'Your profile could not be saved. Please try again.');
-      }
+      const data = await completeRegistrationInDatabase(profile.telegramId, cleanUsername);
+      if (!data) throw new Error('Your profile could not be saved. Please try again.');
 
       const updatedProfile = {
         ...profile,
         username: cleanUsername,
         isRegistered: true,
-        totalTokens: Number(data.total_tokens ?? Math.max(profile.totalTokens, 100)),
+        totalTokens: Number(data.total_tokens ?? profile.totalTokens),
         adsWatched: Number(data.ads_watched ?? ((profile.adsWatched || 0) + 1)),
       };
 
