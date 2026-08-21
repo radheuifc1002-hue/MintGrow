@@ -31,7 +31,20 @@ Deno.serve(async (req) => {
     switch (action) {
       case 'ensure_player': rpc='ensure_player'; args={ p_telegram_id:telegramId,p_username:p.username ?? telegramUser.username ?? telegramUser.first_name ?? `User${telegramId}`,p_avatar_url:p.avatarUrl ?? telegramUser.photo_url ?? null }; break;
       case 'ensure_referral_code': args={p_telegram_id:telegramId}; break;
-      case 'complete_registration': rpc='complete_player_registration'; args={p_telegram_id:telegramId,p_username:p.username ?? telegramUser.username ?? telegramUser.first_name ?? `User${telegramId}`}; break;
+      case 'complete_registration': {
+        // Registration is allowed to repair a missing pre-registration row, but
+        // the database remains authoritative for the one-time 100 MG grant.
+        const registrationUsername = p.username ?? telegramUser.username ?? telegramUser.first_name ?? `User${telegramId}`;
+        stage = 'rpc:ensure_player_before_registration';
+        const { error: ensureError } = await db.rpc('ensure_player', {
+          p_telegram_id: telegramId,
+          p_username: registrationUsername,
+          p_avatar_url: p.avatarUrl ?? telegramUser.photo_url ?? null,
+        });
+        if (ensureError) return json({ error: ensureError.message }, 400);
+        rpc='complete_player_registration'; args={p_telegram_id:telegramId,p_username:registrationUsername};
+        break;
+      }
       case 'update_profile_metadata': rpc='update_player_metadata'; args={p_telegram_id:telegramId,p_username:p.username ?? null,p_avatar_url:p.avatarUrl ?? null,p_wallet_address:p.walletAddress ?? null,p_best_score:p.bestScore ?? null,p_level:p.level ?? null,p_last_login_date:p.lastLoginDate ?? null,p_login_streak:p.loginStreak ?? null,p_power_ups:null}; break;
       case 'credit_player_tokens': args={p_telegram_id:telegramId,p_amount:p.amount,p_best_score:p.bestScore ?? null,p_level:p.level ?? null}; break;
       case 'record_ad_event': args={p_telegram_id:telegramId,p_client_event_id:p.clientEventId,p_placement:p.placement,p_watched:p.watched,p_reward_tokens:p.rewardTokens ?? 0,p_error:p.error ?? null}; break;
