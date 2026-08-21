@@ -5,10 +5,11 @@ import {
   calculateTokensEarned, getLevelFromScore, destroyTile, clearAllBlockers,
 } from '@/services/gameEngine';
 import {
-  getProfile, saveProfile, updateProfileTokens, initOrLoadProfile,
+  getProfile, saveProfile, initOrLoadProfile,
   usePowerUp as consumePowerUp,
   saveBoardState, getSavedBoard, clearSavedBoard,
 } from '@/services/storage';
+import { creditPlayerTokens, recordGameSessionInDatabase } from '@/services/database';
 import { Tile, PlayerProfile, LEVEL_REWARDS, PowerUpType } from '@/types/game';
 
 const SEEN_TILES_KEY = 'mintgrow_seen_tiles_v1';
@@ -63,6 +64,12 @@ interface GameContextType {
 
 export const GameContext = createContext<GameContextType | undefined>(undefined);
 
+const createClientId = (prefix: string) => {
+  const cryptoApi = typeof globalThis !== 'undefined' ? (globalThis as any).crypto : undefined;
+  if (cryptoApi?.randomUUID) return `${prefix}_${cryptoApi.randomUUID()}`;
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`;
+};
+
 export function GameProvider({ children }: { children: ReactNode }) {
   const [board, setBoard] = useState<(Tile | null)[][]>(initGame());
   const [score, setScore] = useState(0);
@@ -80,10 +87,11 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
   const scoreRef = useRef(0);
   const movesRef = useRef(0);
+  const sessionTokensRef = useRef(0);
   const boardRef = useRef(board);
-  // undoStack stores pre-move state (board before spawn)
+  const gameSessionIdRef = useRef(createClientId('game'));
+  const gameSessionStartedAtRef = useRef(new Date().toISOString());
   const undoStack = useRef<Array<{ board: (Tile | null)[][]; score: number; moves: number }>>([]);
-  // Track seen tile values to only congratulate once ever
   const seenTileValues = useRef<Set<number>>(new Set());
 
   const pushUndo = (b: (Tile | null)[][], s: number, m: number) => {
@@ -112,10 +120,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const markTileSeen = async (value: number) => {
     seenTileValues.current.add(value);
     try {
-      await AsyncStorage.setItem(
-        SEEN_TILES_KEY,
-        JSON.stringify(Array.from(seenTileValues.current))
-      );
+      await AsyncStorage.setItem(SEEN_TILES_KEY, JSON.stringify(Array.from(seenTileValues.current)));
     } catch {}
   };
 
@@ -179,10 +184,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
       const { board: moved, score: gained, moved: didMove, newTierValue: ntv } = moveBoard(prev, dir);
       if (!didMove) return prev;
 
-      // Save pre-move state for undo (before spawning new tile)
       pushUndo(prev, scoreRef.current, movesRef.current);
 
-      // Check if this tile value is new (never seen before) — only for meaningful merges
       if (ntv && ntv >= 4 && !seenTileValues.current.has(ntv)) {
         setNewTierValue(ntv);
         markTileSeen(ntv);
@@ -196,9 +199,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
         setLevel(prevLevel => {
           if (newLevel > prevLevel) {
             const reward = LEVEL_REWARDS.find(r => r.level === newLevel);
-            if (reward) {
+            if (reward && profile?.telegramId) {
               setLevelUpReward(reward.tokenReward);
-              updateProfileTokens(reward.tokenReward, newScore).then(p => {
+              creditPlayerTokens(profile.telegramId, reward.tokenReward, newScore, newLevel).then(p => {
                 if (p) setProfileState(p);
               });
             }
@@ -209,9 +212,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
         if (newScore > bestScore) setBestScore(newScore);
 
         const earned = calculateTokensEarned(newScore, s, movesRef.current + 1);
-        if (earned > 0) {
-          setSessionTokens(st => Math.round((st + earned) * 100) / 100);
-          updateProfileTokens(earned, newScore).then(p => {
+        if (earned > 0 && profile?.telegramId) {
+          sessionTokensRef.current = Math.round((sessionTokensRef.current + earned) * 100) / 100;
+          setSessionTokens(sessionTokensRef.current);
+          creditPlayerTokens(profile.telegramId, earned, newScore, newLevel).then(p => {
             if (p) setProfileState(p);
           });
         }
@@ -227,8 +231,6 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
       if (checkGameOver(withSpawn)) {
         setIsGameOver(true);
-        // IMPORTANT: Save the PRE-game-over state (last undo entry), not the dead board
-        // This way, when user continues, they get a playable board back
         const preGameOverState = undoStack.current[undoStack.current.length - 1];
         if (preGameOverState) {
           saveBoardState(preGameOverState);
@@ -236,12 +238,25 @@ export function GameProvider({ children }: { children: ReactNode }) {
           saveBoardState({ board: withSpawn, score: scoreRef.current, moves: movesRef.current });
         }
         setCanContinue(true);
+
+        if (profile?.telegramId) {
+          void recordGameSessionInDatabase({
+            telegramId: profile.telegramId,
+            clientSessionId: gameSessionIdRef.current,
+            score: scoreRef.current,
+            moves: movesRef.current,
+            level: getLevelFromScore(scoreRef.current),
+            tokensEarned: sessionTokensRef.current,
+            board: withSpawn,
+            startedAt: gameSessionStartedAtRef.current,
+          });
+        }
       }
 
       boardRef.current = withSpawn;
       return withSpawn;
     });
-  }, [isGameOver, isWon, isSelectingDestroy, bestScore]);
+  }, [isGameOver, isWon, isSelectingDestroy, bestScore, profile?.telegramId]);
 
   const newGame = useCallback(() => {
     const fresh = initGame();
@@ -249,6 +264,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     boardRef.current = fresh;
     setScore(0);
     scoreRef.current = 0;
+    sessionTokensRef.current = 0;
     setSessionTokens(0);
     setMoves(0);
     movesRef.current = 0;
@@ -256,16 +272,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
     setIsWon(false);
     setLevel(1);
     undoStack.current = [];
+    gameSessionIdRef.current = createClientId('game');
+    gameSessionStartedAtRef.current = new Date().toISOString();
     clearSavedBoard();
     setCanContinue(false);
-
-    getProfile().then(p => {
-      if (p) {
-        p.gamesPlayed += 1;
-        saveProfile(p);
-        setProfileState(p);
-      }
-    });
   }, []);
 
   const continueGame = useCallback(() => setIsWon(false), []);
@@ -283,16 +293,16 @@ export function GameProvider({ children }: { children: ReactNode }) {
       const restoredScore = saved.score || 0;
       const restoredMoves = saved.moves || 0;
 
-      // Step 1: clear saved state
       await clearSavedBoard();
 
-      // Step 2: restore all game state values FIRST
       boardRef.current = restoredBoard;
       scoreRef.current = restoredScore;
       movesRef.current = restoredMoves;
+      sessionTokensRef.current = 0;
       undoStack.current = [];
+      gameSessionIdRef.current = createClientId('game');
+      gameSessionStartedAtRef.current = new Date().toISOString();
 
-      // Step 3: batch all state updates together, clear isGameOver LAST
       setBoard(restoredBoard);
       setScore(restoredScore);
       setMoves(restoredMoves);
@@ -301,7 +311,6 @@ export function GameProvider({ children }: { children: ReactNode }) {
       setCanContinue(false);
       setIsWon(false);
 
-      // Step 4: clear game over state last with a small delay to let board render first
       setTimeout(() => {
         setIsGameOver(false);
       }, 50);
@@ -375,9 +384,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
         let ti = 0;
         for (let r = 0; r < 4; r++)
           for (let c = 0; c < 4; c++)
-            if (ti < tiles.length) {
-              nb[r][c] = { ...tiles[ti++], row: r, col: c, isNew: true, isMerged: false };
-            }
+            if (ti < tiles.length) nb[r][c] = { ...tiles[ti++], row: r, col: c, isNew: true, isMerged: false };
         boardRef.current = nb;
         return nb;
       });
