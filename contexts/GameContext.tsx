@@ -95,8 +95,13 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const recordMultiplierAd = useCallback(() => {
     setMultiplierAdsWatched(current => {
       const next = Math.min(current + 1, MULTIPLIER_TARGET_ADS);
-      if (next >= MULTIPLIER_TARGET_ADS) {
-        setEarningMultiplier(3); setMultiplierSecondsLeft(MULTIPLIER_DURATION_SECONDS);
+      // First completed ad activates 2x. Second completed ad upgrades to 3x.
+      if (next === 1) {
+        setEarningMultiplier(2);
+        setMultiplierSecondsLeft(MULTIPLIER_DURATION_SECONDS);
+      } else if (next >= MULTIPLIER_TARGET_ADS) {
+        setEarningMultiplier(3);
+        setMultiplierSecondsLeft(MULTIPLIER_DURATION_SECONDS);
       }
       return next;
     });
