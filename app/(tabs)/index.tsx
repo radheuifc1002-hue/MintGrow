@@ -70,67 +70,81 @@ export default function GameScreen() {
   }, [activatePowerUp, refreshProfile]);
 
   const handleMultiplier = useCallback(async () => {
-    if (earningMultiplier > 1 || multiplierLoading) return;
+    if (earningMultiplier >= 3 || multiplierLoading) return;
     setMultiplierLoading(true); setAdLoading(true);
     try {
       const result = await showRewardedAd();
-      if (result.watched) {
-        recordMultiplierAd();
-      } else {
-        Alert.alert('Ad Required', 'Watch the full ad to count it toward the MG multiplier.');
-      }
-    } finally {
-      setAdLoading(false); setMultiplierLoading(false);
-    }
+      if (result.watched) recordMultiplierAd();
+      else Alert.alert('Ad Required', 'Watch the full ad to activate the next MG multiplier tier.');
+    } finally { setAdLoading(false); setMultiplierLoading(false); }
   }, [earningMultiplier, multiplierLoading, recordMultiplierAd]);
 
   const formatTimer = (seconds: number) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+  const multiplierStep = earningMultiplier >= 3 ? '3×' : earningMultiplier === 2 ? '2×' : '1×';
+  const nextAdLabel = earningMultiplier === 1 ? 'Watch 1 Ad' : 'Watch 2nd Ad';
+  const multiplierDescription = earningMultiplier >= 3
+    ? 'Maximum multiplier active'
+    : earningMultiplier === 2
+      ? 'One more rewarded ad upgrades to 3×'
+      : 'Watch a rewarded ad to reach 2×';
 
   return (
-    <LinearGradient colors={['#06251A', '#0B3D2B', '#F4FFF8']} style={[styles.container, { paddingTop: insets.top }]}>
-      <View style={styles.playfield}>
+    <LinearGradient colors={['#062A1D', '#0A3B29', '#F4FFF8']} style={[styles.container, { paddingTop: Math.max(insets.top, 4) }]}>
+      <View style={styles.screen}>
         <View style={styles.hero}>
           <View style={styles.logoRow}>
-            <BrandMark size={44} />
-            <View><Text style={styles.logo}>MintGrow</Text><Text style={styles.tagline}>Block Puzzle Arena</Text></View>
+            <BrandMark size={42} />
+            <View style={styles.brandText}>
+              <Text style={styles.logo}>MintGrow</Text>
+              <Text style={styles.tagline}>BLOCK PUZZLE ARENA</Text>
+            </View>
           </View>
-          <Pressable style={styles.newGameBtn} onPress={newGame} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <MaterialIcons name="refresh" size={16} color="#06251A" /><Text style={styles.newGameText}>Restart</Text>
+          <View style={styles.walletChip}>
+            <View style={styles.walletIcon}><MaterialIcons name="eco" size={15} color="#0A7F55" /></View>
+            <Text style={styles.walletValue}>{(profile?.totalTokens ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })} MG</Text>
+            <View style={styles.walletPlus}><MaterialIcons name="add" size={16} color="#FFFFFF" /></View>
+          </View>
+        </View>
+
+        <View style={styles.multiplierCard}>
+          <View style={styles.boltCircle}><MaterialIcons name="bolt" size={21} color="#FFFFFF" /></View>
+          <View style={styles.multiplierCopy}>
+            <Text style={styles.multiplierTitle}>MG Earning Multiplier</Text>
+            <Text style={styles.multiplierSub}>{earningMultiplier > 1 ? `${formatTimer(multiplierSecondsLeft)} remaining` : multiplierDescription}</Text>
+          </View>
+          <View style={styles.multiplierSteps}>
+            <View style={[styles.step, earningMultiplier >= 2 && styles.stepActive]}>
+              <Text style={[styles.stepLabel, earningMultiplier >= 2 && styles.stepLabelActive]}>Watch 1 Ad</Text>
+              <Text style={[styles.stepValue, earningMultiplier >= 2 && styles.stepValueActive]}>2×</Text>
+            </View>
+            <MaterialIcons name="chevron_right" size={18} color={Colors.primary} />
+            <View style={[styles.step, earningMultiplier >= 3 && styles.stepActive]}>
+              <Text style={[styles.stepLabel, earningMultiplier >= 3 && styles.stepLabelActive]}>Watch 2 Ads</Text>
+              <Text style={[styles.stepValue, earningMultiplier >= 3 && styles.stepValueActive]}>3×</Text>
+            </View>
+          </View>
+          <Pressable style={[styles.multiplierAction, earningMultiplier >= 3 && styles.multiplierActionDisabled]} onPress={handleMultiplier} disabled={earningMultiplier >= 3 || multiplierLoading}>
+            <MaterialIcons name={earningMultiplier >= 3 ? 'timer' : 'play-arrow'} size={16} color={earningMultiplier >= 3 ? Colors.textMuted : '#FFFFFF'} />
+            <Text style={[styles.multiplierActionText, earningMultiplier >= 3 && styles.multiplierActionTextDisabled]}>{earningMultiplier >= 3 ? formatTimer(multiplierSecondsLeft) : multiplierLoading ? '...' : nextAdLabel}</Text>
           </Pressable>
         </View>
 
-        <View style={styles.arenaCard}>
-          <View style={styles.stageHeader}>
-            <View><Text style={styles.stageLabel}>Season 01</Text><Text style={styles.stageTitle}>Crypto Merge Run</Text></View>
-            <View style={styles.levelPill}><Text style={styles.levelPillText}>LV {level}</Text></View>
-          </View>
-          <View style={styles.scoreRow}>
-            <ScoreCard label="Score" value={score.toLocaleString()} />
-            <ScoreCard label="Best" value={bestScore.toLocaleString()} />
-            <ScoreCard label="Earned" value={`+${sessionTokens.toFixed(0)}`} accent />
-          </View>
-          <LevelProgressBar score={score} level={level} />
-          <View style={styles.multiplierRow}>
-            <View style={styles.multiplierInfo}>
-              <View style={[styles.multiplierIcon, earningMultiplier > 1 && styles.multiplierIconActive]}>
-                <MaterialIcons name="bolt" size={18} color={earningMultiplier > 1 ? '#06251A' : Colors.primary} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.multiplierTitle}>{earningMultiplier > 1 ? '3× MG Multiplier Active' : 'MG Earning Multiplier'}</Text>
-                <Text style={styles.multiplierSub}>{earningMultiplier > 1 ? `${formatTimer(multiplierSecondsLeft)} remaining` : `${multiplierAdsWatched}/2 rewarded ads watched`}</Text>
-              </View>
-            </View>
-            <Pressable
-              style={[styles.multiplierButton, (earningMultiplier > 1 || multiplierLoading) && styles.multiplierButtonDisabled]}
-              onPress={handleMultiplier}
-              disabled={earningMultiplier > 1 || multiplierLoading}
-            >
-              <MaterialIcons name={earningMultiplier > 1 ? 'timer' : 'play-circle-outline'} size={17} color={earningMultiplier > 1 ? Colors.textMuted : '#06251A'} />
-              <Text style={[styles.multiplierButtonText, earningMultiplier > 1 && styles.multiplierButtonTextDisabled]}>{earningMultiplier > 1 ? formatTimer(multiplierSecondsLeft) : multiplierLoading ? 'Loading' : 'Watch Ad'}</Text>
-            </Pressable>
-          </View>
-          <View style={styles.boardWrapper}><GameBoard /></View>
+        <View style={styles.scoreStrip}>
+          <ScoreCard label="Score" value={score.toLocaleString()} />
+          <ScoreCard label="Best" value={bestScore.toLocaleString()} />
+          <ScoreCard label="MG Earned" value={`+${sessionTokens.toFixed(0)}`} accent />
         </View>
+
+        <View style={styles.gameHeader}>
+          <View>
+            <Text style={styles.season}>SEASON 01</Text>
+            <Text style={styles.gameTitle}>Crypto Merge Run</Text>
+          </View>
+          <View style={styles.levelPill}><Text style={styles.levelText}>LV {level}</Text></View>
+        </View>
+        <LevelProgressBar score={score} level={level} />
+
+        <View style={styles.boardArea}><GameBoard /></View>
       </View>
 
       <PowerUpBar onWatchAd={handlePowerUpPress} onSpendTokens={handlePowerUpTokens} loading={loadingPowerUp} />
@@ -148,41 +162,49 @@ function LevelProgressBar({ score, level }: { score: number; level: number }) {
   const curr = thresholds[level - 1] || 0;
   const next = thresholds[level] || curr + 1;
   const pct = Math.max(Math.min(((score - curr) / (next - curr)) * 100, 100), 2);
-  return <View style={lStyles.container}><View style={lStyles.bar}><View style={[lStyles.fill, { width: `${pct}%` }]} /></View><Text style={lStyles.text}>Lv {level} → {level + 1} · {score.toLocaleString()} / {next.toLocaleString()}</Text></View>;
+  return <View style={lStyles.container}><View style={lStyles.bar}><View style={[lStyles.fill, { width: `${pct}%` }]} /></View><Text style={lStyles.text}>LV {level}  ·  {score.toLocaleString()} / {next.toLocaleString()}</Text></View>;
 }
 
 const lStyles = StyleSheet.create({
-  container: { paddingHorizontal: Spacing.md, marginBottom: 6 },
-  bar: { height: 5, backgroundColor: Colors.bgSurface, borderRadius: 4, overflow: 'hidden', marginBottom: 3, borderWidth: 1, borderColor: Colors.border },
+  container: { paddingHorizontal: 4, marginBottom: 2 },
+  bar: { height: 4, backgroundColor: '#DCEEE4', borderRadius: 4, overflow: 'hidden', marginBottom: 2 },
   fill: { height: '100%', backgroundColor: Colors.primary, borderRadius: 4 },
-  text: { ...Typography.caption, color: Colors.textMuted, textAlign: 'center' },
+  text: { ...Typography.caption, color: Colors.textMuted, textAlign: 'center', fontSize: 9 },
 });
 
 const styles = StyleSheet.create({
   container: { flex: 1, minHeight: 0, overflow: 'hidden' },
-  playfield: { flex: 1, minHeight: 0, padding: Spacing.sm, gap: Spacing.sm },
-  hero: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 2 },
+  screen: { flex: 1, minHeight: 0, paddingHorizontal: 9, paddingTop: 4, paddingBottom: 3 },
+  hero: { height: 46, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 },
   logoRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  logo: { fontSize: 22, fontWeight: '900', color: '#FFFFFF', letterSpacing: 0.4 },
-  tagline: { ...Typography.caption, color: '#B7F7D7', textTransform: 'uppercase', letterSpacing: 1.2 },
-  newGameBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#B8FFD9', borderRadius: Radius.full, paddingVertical: 8, paddingHorizontal: 12, gap: 5, shadowColor: '#000', shadowOpacity: 0.22, shadowRadius: 10, elevation: 6 },
-  newGameText: { ...Typography.smallBold, color: '#06251A' },
-  arenaCard: { flex: 1, minHeight: 0, backgroundColor: 'rgba(255,255,255,0.96)', borderRadius: 24, padding: Spacing.sm, borderWidth: 1, borderColor: 'rgba(255,255,255,0.8)', shadowColor: '#00180F', shadowOpacity: 0.24, shadowRadius: 22, shadowOffset: { width: 0, height: 14 }, elevation: 10 },
-  stageHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
-  stageLabel: { ...Typography.caption, color: Colors.primary, letterSpacing: 1.4, textTransform: 'uppercase' },
-  stageTitle: { fontSize: 18, fontWeight: '900', color: Colors.textPrimary },
-  levelPill: { backgroundColor: Colors.primary, paddingHorizontal: 10, paddingVertical: 6, borderRadius: Radius.full },
-  levelPillText: { ...Typography.smallBold, color: '#fff' },
-  scoreRow: { flexDirection: 'row', gap: 6, paddingVertical: 5 },
-  multiplierRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 4, marginBottom: 4, padding: 7, backgroundColor: '#F1FFF7', borderRadius: 14, borderWidth: 1, borderColor: '#B8FFD9' },
-  multiplierInfo: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  multiplierIcon: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: '#E3FFF0', borderWidth: 1, borderColor: '#B8FFD9' },
-  multiplierIconActive: { backgroundColor: '#B8FFD9', borderColor: Colors.primary },
-  multiplierTitle: { fontSize: 12, fontWeight: '800', color: Colors.textPrimary },
-  multiplierSub: { ...Typography.caption, color: Colors.textMuted, marginTop: 1 },
-  multiplierButton: { minHeight: 34, paddingHorizontal: 10, borderRadius: 10, backgroundColor: '#B8FFD9', alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 4 },
-  multiplierButtonDisabled: { backgroundColor: Colors.bgSurface },
-  multiplierButtonText: { fontSize: 11, fontWeight: '800', color: '#06251A' },
-  multiplierButtonTextDisabled: { color: Colors.textMuted },
-  boardWrapper: { flex: 1, minHeight: 0, justifyContent: 'center', alignItems: 'center', overflow: 'visible' },
+  brandText: { justifyContent: 'center' },
+  logo: { fontSize: 21, fontWeight: '900', color: '#FFFFFF', letterSpacing: 0.2 },
+  tagline: { fontSize: 8.5, fontWeight: '800', color: '#B7F7D7', letterSpacing: 1.25, marginTop: 1 },
+  walletChip: { height: 34, borderRadius: Radius.full, backgroundColor: '#E9FFF2', flexDirection: 'row', alignItems: 'center', paddingLeft: 5, paddingRight: 5, gap: 5, borderWidth: 1, borderColor: '#B8FFD9' },
+  walletIcon: { width: 24, height: 24, borderRadius: 12, backgroundColor: '#C8F7DA', alignItems: 'center', justifyContent: 'center' },
+  walletValue: { fontSize: 12, fontWeight: '900', color: '#0A5C40' },
+  walletPlus: { width: 24, height: 24, borderRadius: 12, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center' },
+  multiplierCard: { minHeight: 58, backgroundColor: '#F0FFF7', borderRadius: 16, borderWidth: 1, borderColor: '#B8FFD9', padding: 6, flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 5 },
+  boltCircle: { width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center' },
+  multiplierCopy: { width: 98, minWidth: 88 },
+  multiplierTitle: { fontSize: 10.5, fontWeight: '900', color: Colors.textPrimary },
+  multiplierSub: { fontSize: 8.5, color: Colors.textMuted, marginTop: 1, lineHeight: 11 },
+  multiplierSteps: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 2 },
+  step: { minWidth: 55, height: 39, borderRadius: 11, backgroundColor: '#E5F8ED', borderWidth: 1, borderColor: '#C8E8D6', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  stepActive: { backgroundColor: '#CFF8DF', borderColor: Colors.primary },
+  stepLabel: { fontSize: 7.5, fontWeight: '700', color: Colors.textMuted },
+  stepLabelActive: { color: '#0A7F55' },
+  stepValue: { fontSize: 15, lineHeight: 16, fontWeight: '900', color: Colors.textPrimary },
+  stepValueActive: { color: Colors.primary },
+  multiplierAction: { height: 36, minWidth: 66, borderRadius: 11, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 2, paddingHorizontal: 7 },
+  multiplierActionDisabled: { backgroundColor: '#E2ECE7' },
+  multiplierActionText: { fontSize: 8.5, fontWeight: '900', color: '#FFFFFF' },
+  multiplierActionTextDisabled: { color: Colors.textMuted },
+  scoreStrip: { height: 55, flexDirection: 'row', gap: 5, marginBottom: 4 },
+  gameHeader: { height: 37, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4 },
+  season: { fontSize: 8.5, fontWeight: '900', letterSpacing: 1.2, color: Colors.primary },
+  gameTitle: { fontSize: 17, lineHeight: 19, fontWeight: '900', color: Colors.textPrimary },
+  levelPill: { backgroundColor: Colors.primary, paddingHorizontal: 12, paddingVertical: 6, borderRadius: Radius.full },
+  levelText: { fontSize: 11, fontWeight: '900', color: '#FFFFFF' },
+  boardArea: { flex: 1, minHeight: 0, alignItems: 'center', justifyContent: 'center' },
 });
