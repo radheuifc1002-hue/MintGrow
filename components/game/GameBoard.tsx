@@ -2,17 +2,17 @@ import React, { useRef } from 'react';
 import { View, StyleSheet, useWindowDimensions, PanResponder, Text, Platform } from 'react-native';
 import { useGame } from '@/hooks/useGame';
 import { GameTile } from './GameTile';
-import { Radius, Typography } from '@/constants/theme';
+import { Typography } from '@/constants/theme';
 
 const BOARD_SIZE = 4;
-const GAP = 10;
+const GAP = 9;
 
 function getBoardMetrics(width: number, height: number) {
-  // Geometry follows the approved 781px reference: the board occupies about 86% of width.
-  // The height limit prevents it from colliding with Telegram's bottom navigation.
-  const widthLimit = Math.max(286, width - 70);
-  const heightLimit = Math.max(286, height * 0.50);
-  const boardW = Math.min(widthLimit, heightLimit, 660);
+  // Telegram Mini App geometry: maximize the board within the available width,
+  // while keeping a conservative height ceiling so the entire grid remains usable.
+  const widthLimit = Math.max(286, width - 50);
+  const heightLimit = Math.max(286, height * 0.54);
+  const boardW = Math.min(widthLimit, heightLimit, 680);
   const tileSize = Math.max(54, Math.floor((boardW - GAP * (BOARD_SIZE + 1)) / BOARD_SIZE));
   const boardDim = tileSize * BOARD_SIZE + GAP * (BOARD_SIZE + 1);
   return { tileSize, boardDim };
