@@ -7,7 +7,8 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { usePathname } from 'expo-router';
 import { Colors, Spacing, Radius, Typography } from '@/constants/theme';
 import { useGame } from '@/hooks/useGame';
-import { recordAdEvent, showRewardedAd } from '@/services/monetag';
+import { showRewardedAd } from '@/services/monetag';
+import { recordAdEventInDatabase } from '@/services/database';
 import { completeRegistrationInDatabase } from '@/services/registration';
 import { AdLoadingOverlay } from './AdLoadingOverlay';
 
@@ -49,9 +50,17 @@ export function RegistrationGate() {
 
     try {
       const result = await showRewardedAd('rewarded');
-      const eventId = `ad_${profile.telegramId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-      await recordAdEvent('registration', result, result.watched ? 100 : 0, profile.telegramId);
+      const clientEventId = `ad_${profile.telegramId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const recorded = await recordAdEventInDatabase({
+        telegramId: profile.telegramId,
+        clientEventId,
+        placement: 'registration',
+        watched: result.watched,
+        rewardTokens: result.watched ? 100 : 0,
+        error: result.error || result.reason || null,
+      });
 
+      if (!recorded) throw new Error('The ad result could not be saved. Please try again.');
       if (!result.watched) {
         setError(result.error || 'The ad was not completed. Please try again.');
         return;
