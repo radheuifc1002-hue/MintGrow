@@ -60,9 +60,9 @@ export function GameTile({ tile, tileSize, gap }: Props) {
 
   return <Animated.View style={[styles.tile, { width: tileSize, height: tileSize, left, top, backgroundColor: getBg(), borderColor: getBorder(), borderWidth: tile.isMerged || (isSelectingDestroy && tile.type === 'normal') ? 2.5 : 1.5, transform: [{ scale: Animated.multiply(Animated.multiply(scaleAnim, mergeAnim), destroyPulse) }], opacity: opacityAnim }]}>
     <Pressable style={styles.pressable} onPress={() => { if (isSelectingDestroy && tile.type === 'normal') selectTileToDestroy(tile.row, tile.col); }}>
-      {tile.type === 'normal' || tile.type === 'multiplier' ? <View style={[styles.logoBadge, { width: badgeSize, height: badgeSize, borderRadius: Math.round(badgeSize * 0.28), backgroundColor: '#FFFFFF', borderColor: `${coin.color}55'`.replace("'", '') }]}>
+      {tile.type === 'normal' || tile.type === 'multiplier' ? <View style={[styles.logoBadge, { width: badgeSize, height: badgeSize, borderRadius: Math.round(badgeSize * 0.28), borderColor: coin.color }]}>
         <MaterialIcons name={iconName} size={iconSize} color={coin.color} />
-      </View> : <View style={[styles.specialBadge, { width: badgeSize, height: badgeSize }]}><MaterialIcons name={tile.type === 'bomb' ? 'bomb' : 'block'} size={iconSize} color={tile.type === 'bomb' ? Colors.error : Colors.textMuted} /></View>}
+      </View> : <View style={[styles.specialBadge, { width: badgeSize, height: badgeSize }]}><MaterialIcons name={tile.type === 'bomb' ? 'local-fire-department' : 'block'} size={iconSize} color={tile.type === 'bomb' ? Colors.error : Colors.textMuted} /></View>}
       <Text style={[styles.coinLabel, { fontSize: tileSize < 68 ? 12 : 15, color: coin.color }]}>{getLabel()}</Text>
       {tile.type === 'normal' && <Text style={[styles.value, { color: coin.color, fontSize: tileSize < 68 ? 7 : 9 }]}>{formatValue(tile.value)}</Text>}
       {isSelectingDestroy && tile.type === 'normal' && <View style={styles.destroyOverlay}><Text style={styles.destroyText}>REMOVE</Text></View>}
@@ -73,7 +73,7 @@ export function GameTile({ tile, tileSize, gap }: Props) {
 const styles = StyleSheet.create({
   tile: { position: 'absolute', borderRadius: Radius.md, shadowColor: '#00180F', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.18, shadowRadius: 7, elevation: 5 },
   pressable: { flex: 1, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.md, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.72)', paddingVertical: 2 },
-  logoBadge: { alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, marginBottom: 2 },
+  logoBadge: { alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, marginBottom: 2, backgroundColor: 'rgba(255,255,255,0.72)' },
   specialBadge: { alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: 'rgba(255,255,255,0.72)', marginBottom: 2 },
   coinLabel: { fontWeight: '900', letterSpacing: 0.3 },
   value: { fontWeight: '800', marginTop: 1, opacity: 0.8 },
