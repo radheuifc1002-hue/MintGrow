@@ -2,18 +2,16 @@ import React, { useRef } from 'react';
 import { View, StyleSheet, useWindowDimensions, PanResponder, Text, Platform } from 'react-native';
 import { useGame } from '@/hooks/useGame';
 import { GameTile } from './GameTile';
-import { Colors, Radius, Spacing, Typography } from '@/constants/theme';
+import { Colors, Radius, Typography } from '@/constants/theme';
 
 const BOARD_SIZE = 4;
-const GAP = 7;
+const GAP = 6;
 
 function getBoardMetrics(width: number, height: number) {
-  // Keep the board square and constrain it by BOTH dimensions. Telegram Mini
-  // Apps can have a short WebView, so width-only sizing can clip vertically.
-  const availableWidth = Math.max(220, width - 42);
-  const availableHeight = Math.max(220, height * 0.36);
-  const boardW = Math.min(availableWidth, availableHeight, 300);
-  const tileSize = Math.max(Math.floor((boardW - GAP * (BOARD_SIZE + 1)) / BOARD_SIZE), 48);
+  const availableWidth = Math.max(240, width - 24);
+  const availableHeight = Math.max(240, height * 0.50);
+  const boardW = Math.min(availableWidth, availableHeight, 380);
+  const tileSize = Math.max(Math.floor((boardW - GAP * (BOARD_SIZE + 1)) / BOARD_SIZE), 52);
   return { tileSize, boardDim: tileSize * BOARD_SIZE + GAP * (BOARD_SIZE + 1) };
 }
 
