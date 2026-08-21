@@ -1,8 +1,8 @@
 import { useState, useCallback } from 'react';
-import { getWithdrawals, getProfile, syncProfileFromSupabase } from '@/services/storage';
+import {
+  getWithdrawals, saveWithdrawal, getProfile, saveProfile, incrementAdsWatched,
+} from '@/services/storage';
 import { showRewardedAd } from '@/services/monetag';
-import { recordAdEventInDatabase } from '@/services/database';
-import { submitWithdrawalToDatabase } from '@/services/withdrawalDatabase';
 import { WithdrawalRequest, WITHDRAWAL_MIN, TOKEN_NETWORK } from '@/types/game';
 
 const BEP20_ADDRESS_PATTERN = /^0x[a-fA-F0-9]{40}$/;
@@ -38,25 +38,15 @@ export function useWithdrawal() {
       return false;
     }
 
+    // Ad gate
     setIsWatchingAd(true);
     try {
       const adResult = await showRewardedAd();
-      const clientEventId = `ad_${profile.telegramId}_withdraw_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-      const recorded = await recordAdEventInDatabase({
-        telegramId: profile.telegramId,
-        clientEventId,
-        placement: 'withdrawal',
-        watched: adResult.watched,
-        error: adResult.error || adResult.reason || null,
-      });
-      if (!recorded) {
-        setError('The ad result could not be saved. Please try again.');
-        return false;
-      }
       if (!adResult.watched) {
         setError('Please watch the full ad to unlock withdrawal');
         return false;
       }
+      await incrementAdsWatched();
     } finally {
       setIsWatchingAd(false);
     }
@@ -64,7 +54,7 @@ export function useWithdrawal() {
     setIsLoading(true);
     try {
       const req: WithdrawalRequest = {
-        id: `wd_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        id: `wd_${Date.now()}`,
         telegramId: profile.telegramId,
         username: profile.username,
         amount,
@@ -74,21 +64,16 @@ export function useWithdrawal() {
         createdAt: new Date().toISOString(),
       };
 
-      await submitWithdrawalToDatabase({
-        id: req.id,
-        telegramId: req.telegramId,
-        username: req.username,
-        amount: req.amount,
-        walletAddress: req.walletAddress,
-        network: req.network,
-      });
+      profile.totalTokens = Math.round((profile.totalTokens - amount) * 100) / 100;
+      profile.pendingTokens = Math.round((profile.pendingTokens + amount) * 100) / 100;
+      await saveProfile(profile);
+      await saveWithdrawal(req);
 
-      await syncProfileFromSupabase(profile.telegramId);
       const list = await getWithdrawals(profile.telegramId);
       setWithdrawals(list);
       return true;
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to submit. Please try again.');
+    } catch {
+      setError('Failed to submit. Please try again.');
       return false;
     } finally {
       setIsLoading(false);
@@ -109,13 +94,7 @@ export function useWithdrawal() {
     setError(null);
     try {
       profile.walletAddress = normalized;
-      const { supabase } = await import('@/services/supabase');
-      const { error: saveError } = await supabase
-        .from('players')
-        .update({ wallet_address: normalized })
-        .eq('telegram_id', profile.telegramId);
-      if (saveError) throw saveError;
-      await syncProfileFromSupabase(profile.telegramId);
+      await saveProfile(profile);
       return true;
     } catch {
       setError('Failed to save wallet address. Please try again.');

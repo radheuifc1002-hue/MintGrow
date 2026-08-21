@@ -90,6 +90,12 @@ export default function GameScreen() {
           <LevelProgressBar score={score} level={level} />
           <View style={styles.boardWrapper}><GameBoard /></View>
         </View>
+
+        <View style={styles.missionStrip}>
+          <MissionButton icon="trending-up" label="Merge higher coins" />
+          <MissionButton icon="auto-awesome" label="Random MG rewards" />
+          <MissionButton icon="account-balance-wallet" label="Withdraw BEP-20" />
+        </View>
       </View>
 
       <PowerUpBar onWatchAd={handlePowerUpPress} onSpendTokens={handlePowerUpTokens} loading={loadingPowerUp} />
@@ -99,6 +105,15 @@ export default function GameScreen() {
       <DailyBonusModal visible={dailyBonus.visible} tokens={dailyBonus.tokens} streak={dailyBonus.streak} onClaim={handleClaimBonus} />
       <AdLoadingOverlay visible={adLoading} message="Earning your power-up..." />
     </LinearGradient>
+  );
+}
+
+function MissionButton({ icon, label }: { icon: keyof typeof MaterialIcons.glyphMap; label: string }) {
+  return (
+    <View style={styles.missionItem} accessibilityRole="button">
+      <View style={styles.missionIconButton}><MaterialIcons name={icon} size={17} color="#B8FFD9" /></View>
+      <Text style={styles.missionText} numberOfLines={2}>{label}</Text>
+    </View>
   );
 }
 
@@ -133,5 +148,9 @@ const styles = StyleSheet.create({
   levelPill: { backgroundColor: Colors.primary, paddingHorizontal: 10, paddingVertical: 6, borderRadius: Radius.full },
   levelPillText: { ...Typography.smallBold, color: '#fff' },
   scoreRow: { flexDirection: 'row', gap: 6, paddingVertical: 5 },
-  boardWrapper: { flex: 1, minHeight: 0, justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
+  boardWrapper: { flex: 1, minHeight: 0, justifyContent: 'center', alignItems: 'center', overflow: 'visible' },
+  missionStrip: { flexDirection: 'row', gap: Spacing.sm, backgroundColor: 'rgba(6,37,26,0.9)', borderRadius: Radius.xl, padding: 6, borderWidth: 1, borderColor: 'rgba(184,255,217,0.25)' },
+  missionItem: { flex: 1, alignItems: 'center', gap: 3, paddingVertical: 2 },
+  missionIconButton: { width: 30, height: 30, borderRadius: 9, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(184,255,217,0.10)', borderWidth: 1, borderColor: 'rgba(184,255,217,0.22)' },
+  missionText: { ...Typography.caption, color: '#DFFFF0', textAlign: 'center', fontSize: 9 },
 });

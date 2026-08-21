@@ -1,140 +1,130 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { PlayerProfile, ReferralEntry } from '@/types/game';
-import { verifiedApi } from '@/services/verifiedApi';
+/**
+ * MintGrow – Supabase database helpers
+ * Referral read / write operations used by the Referral screen.
+ */
 
-const PROFILE_TTL_MS = 5000;
-const REFERRAL_TTL_MS = 10000;
-const profileCache = new Map<string, { expiresAt: number; profile: PlayerProfile }>();
-const referralCache = new Map<string, { expiresAt: number; referrals: ReferralEntry[] }>();
-const now = () => Date.now();
-const invalidateProfile = (telegramId: string) => profileCache.delete(telegramId);
+import { supabase } from './supabase';
+import { ReferralEntry } from '@/types/game';
 
-const mapPlayer = (data: any): PlayerProfile => ({
-  telegramId: data.telegram_id,
-  username: data.username,
-  referralCode: data.referral_code,
-  referredBy: data.referred_by ?? undefined,
-  referralCount: Number(data.direct_referral_count ?? 0),
-  referralTokensEarned: Number(data.referral_tokens_earned ?? 0),
-  totalTokens: Number(data.total_tokens ?? 0),
-  pendingTokens: Number(data.pending_tokens ?? 0),
-  withdrawnTokens: Number(data.withdrawn_tokens ?? 0),
-  walletAddress: data.wallet_address ?? '',
-  level: Number(data.level ?? 1),
-  gamesPlayed: Number(data.games_played ?? 0),
-  bestScore: Number(data.best_score ?? 0),
-  adsWatched: Number(data.ads_watched ?? 0),
-  lastLoginDate: data.last_login_date ?? undefined,
-  loginStreak: Number(data.login_streak ?? 0),
-  powerUps: data.power_ups ?? { undo: 0, destroy: 0, clear_blockers: 0, shuffle: 0 },
-  isRegistered: Boolean(data.is_registered),
-});
+// ─── Simple in-memory cache (per session) ───────────────────────────────────
+const referralCache: Map<string, { data: ReferralEntry[]; ts: number }> = new Map();
+const CACHE_TTL_MS = 60_000; // 60 s
 
-export const getCachedPlayer = async (telegramId: string, forceRefresh = false): Promise<PlayerProfile | null> => {
-  const cached = profileCache.get(telegramId);
-  if (!forceRefresh && cached && cached.expiresAt > now()) return cached.profile;
-  try {
-    const data = await verifiedApi<any>('get_player', { telegramId });
-    if (!data) return null;
-    const profile = mapPlayer(data);
-    profileCache.set(telegramId, { expiresAt: now() + PROFILE_TTL_MS, profile });
-    await AsyncStorage.setItem('mintgrow_profile_v3', JSON.stringify(profile));
-    return profile;
-  } catch {
-    return cached?.profile ?? null;
+export async function getReferralsCached(
+  telegramId: string,
+  forceRefresh = false,
+): Promise<ReferralEntry[]> {
+  const cached = referralCache.get(telegramId);
+  if (!forceRefresh && cached && Date.now() - cached.ts < CACHE_TTL_MS) {
+    return cached.data;
   }
-};
 
-export const ensurePlayerInDatabase = async (telegramId: string, username: string, avatarUrl?: string): Promise<PlayerProfile | null> => {
-  try {
-    const data = await verifiedApi<any>('ensure_player', { telegramId, username, avatarUrl });
-    const profile = data ? mapPlayer(data) : null;
-    if (profile) {
-      invalidateProfile(telegramId);
-      profileCache.set(telegramId, { expiresAt: now() + PROFILE_TTL_MS, profile });
-      await AsyncStorage.setItem('mintgrow_profile_v3', JSON.stringify(profile));
-    }
-    return profile;
-  } catch {
-    return getCachedPlayer(telegramId, true);
+  const { data, error } = await supabase
+    .from('referrals')
+    .select(`
+      id,
+      tokens_earned,
+      created_at,
+      level,
+      referee_telegram_id,
+      players!referrals_referee_telegram_id_fkey (
+        username,
+        total_tokens
+      )
+    `)
+    .eq('referrer_telegram_id', telegramId)
+    .order('created_at', { ascending: false })
+    .limit(200);
+
+  if (error) {
+    console.warn('[getReferralsCached] query error:', error.message);
+    return cached?.data ?? [];
   }
-};
 
-export const completeRegistrationInDatabase = async (telegramId: string, username: string): Promise<PlayerProfile | null> => {
-  try {
-    const data = await verifiedApi<any>('complete_registration', { telegramId, username });
-    if (!data) return null;
-    const profile = mapPlayer(data);
-    invalidateProfile(telegramId);
-    profileCache.set(telegramId, { expiresAt: now() + PROFILE_TTL_MS, profile });
-    await AsyncStorage.setItem('mintgrow_profile_v3', JSON.stringify(profile));
-    return profile;
-  } catch { return null; }
-};
+  const entries: ReferralEntry[] = (data ?? []).map((row: any) => ({
+    code: row.referee_telegram_id ?? '',
+    username: row.players?.username ?? row.referee_telegram_id ?? 'Unknown',
+    joinedAt: row.created_at ?? new Date().toISOString(),
+    tokensEarned: Number(row.tokens_earned ?? 0),
+    level: Number(row.level ?? 1),
+    refereeBalance: Number(row.players?.total_tokens ?? 0),
+  }));
 
-export const ensureReferralCodeInDatabase = async (telegramId: string): Promise<string | null> => {
-  try {
-    const data = await verifiedApi<string>('ensure_referral_code', { telegramId });
-    invalidateProfile(telegramId);
-    return typeof data === 'string' ? data : null;
-  } catch { return null; }
-};
+  referralCache.set(telegramId, { data: entries, ts: Date.now() });
+  return entries;
+}
 
-export const creditPlayerTokens = async (telegramId: string, amount: number, bestScore: number, level: number): Promise<PlayerProfile | null> => {
-  if (amount <= 0) return getCachedPlayer(telegramId);
-  try {
-    await verifiedApi('credit_player_tokens', { telegramId, amount, bestScore, level });
-    invalidateProfile(telegramId);
-    return getCachedPlayer(telegramId, true);
-  } catch { return null; }
-};
+// ─── Apply a referral code ───────────────────────────────────────────────────
+export interface ApplyReferralResult {
+  ok: boolean;
+  reason?: string;
+}
 
-export const recordAdEventInDatabase = async ({ telegramId, clientEventId, placement, watched, rewardTokens = 0, error = null }: {
-  telegramId: string; clientEventId: string; placement: string; watched: boolean; rewardTokens?: number; error?: string | null;
-}): Promise<boolean> => {
-  try {
-    await verifiedApi('record_ad_event', { telegramId, clientEventId, placement, watched, rewardTokens, error });
-    invalidateProfile(telegramId);
-    return true;
-  } catch { return false; }
-};
+export async function applyReferralCodeInDatabase(
+  telegramId: string,
+  code: string,
+): Promise<ApplyReferralResult> {
+  // 1. Prevent self-referral
+  const { data: self } = await supabase
+    .from('players')
+    .select('telegram_id, referral_code, referred_by')
+    .eq('telegram_id', telegramId)
+    .single();
 
-export const recordGameSessionInDatabase = async ({ telegramId, clientSessionId, score, moves, level, tokensEarned, maxTile = 2, board = null, startedAt }: {
-  telegramId: string; clientSessionId: string; score: number; moves: number; level: number; tokensEarned: number; maxTile?: number; board?: unknown; startedAt?: string;
-}): Promise<boolean> => {
-  try {
-    await verifiedApi('record_game_session', { telegramId, clientSessionId, score, moves, level, tokensEarned, maxTile, board, startedAt });
-    invalidateProfile(telegramId);
-    return true;
-  } catch { return false; }
-};
+  if (!self) return { ok: false, reason: 'referee_not_found' };
+  if (self.referred_by) return { ok: false, reason: 'already_referred' };
+  if (self.referral_code === code) return { ok: false, reason: 'self_referral' };
 
-export const applyReferralCodeInDatabase = async (refereeTelegramId: string, code: string): Promise<{ ok: boolean; reason?: string; welcome_bonus?: number; referrer_bonus?: number }> => {
-  try {
-    const data = await verifiedApi<any>('apply_referral_code', { telegramId: refereeTelegramId, code: code.trim().toUpperCase() });
-    if (data?.ok) {
-      invalidateProfile(refereeTelegramId);
-      referralCache.delete(refereeTelegramId);
-      await getCachedPlayer(refereeTelegramId, true);
-    }
-    return data ?? { ok: false, reason: 'database_error' };
-  } catch (error) { return { ok: false, reason: error instanceof Error ? error.message : 'database_error' }; }
-};
+  // 2. Look up the referrer by code
+  const { data: referrer } = await supabase
+    .from('players')
+    .select('telegram_id, referral_code, total_tokens, direct_referral_count, referral_tokens_earned')
+    .eq('referral_code', code)
+    .single();
 
-export const getReferralsCached = async (referrerTelegramId: string, forceRefresh = false): Promise<ReferralEntry[]> => {
-  const cached = referralCache.get(referrerTelegramId);
-  if (!forceRefresh && cached && cached.expiresAt > now()) return cached.referrals;
-  try {
-    const data = await verifiedApi<any[]>('get_referrals', { telegramId: referrerTelegramId });
-    const referrals: ReferralEntry[] = (data ?? []).map((row: any) => ({
-      code: row.referrer_telegram_id,
-      username: row.players?.username ?? 'Unknown',
-      joinedAt: String(row.created_at),
-      tokensEarned: Number(row.tokens_earned ?? 0),
-      level: Number(row.level ?? 1),
-      refereeBalance: Number(row.players?.total_tokens ?? 0),
-    }));
-    referralCache.set(referrerTelegramId, { expiresAt: now() + REFERRAL_TTL_MS, referrals });
-    return referrals;
-  } catch { return cached?.referrals ?? []; }
-};
+  if (!referrer) return { ok: false, reason: 'invalid_code' };
+
+  // 3. Insert the referral row (unique constraint prevents duplicates)
+  const { error: insertError } = await supabase.from('referrals').insert({
+    referrer_telegram_id: referrer.telegram_id,
+    referee_telegram_id: telegramId,
+    level: 1,
+    tokens_earned: 0,
+  });
+
+  if (insertError) {
+    if (insertError.code === '23505') return { ok: false, reason: 'already_referred' };
+    console.error('[applyReferralCode] insert error:', insertError.message);
+    return { ok: false, reason: 'db_error' };
+  }
+
+  // 4. Mark the referee as referred
+  await supabase
+    .from('players')
+    .update({ referred_by: code })
+    .eq('telegram_id', telegramId);
+
+  // 5. Give both parties the welcome / referral bonus
+  await Promise.allSettled([
+    supabase
+      .from('players')
+      .update({
+        total_tokens: Number(self.total_tokens ?? 0) + 100,
+      })
+      .eq('telegram_id', telegramId),
+
+    supabase
+      .from('players')
+      .update({
+        direct_referral_count: Number(referrer.direct_referral_count ?? 0) + 1,
+        referral_tokens_earned: Number(referrer.referral_tokens_earned ?? 0) + 500,
+        total_tokens: Number(referrer.total_tokens ?? 0) + 500,
+      })
+      .eq('telegram_id', referrer.telegram_id),
+  ]);
+
+  // Invalidate cache so the next fetch is fresh
+  referralCache.delete(referrer.telegram_id);
+
+  return { ok: true };
+}
