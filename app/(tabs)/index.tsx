@@ -20,10 +20,15 @@ import { showRewardedAd } from '@/services/monetag';
 
 export default function GameScreen() {
   const insets = useSafeAreaInsets();
-  const { score, bestScore, level, sessionTokens, newGame, profile, refreshProfile, newTierValue, dismissNewTier, activatePowerUp } = useGame();
+  const {
+    score, bestScore, level, sessionTokens, newGame, profile, refreshProfile, newTierValue,
+    dismissNewTier, activatePowerUp, earningMultiplier, multiplierSecondsLeft,
+    multiplierAdsWatched, recordMultiplierAd,
+  } = useGame();
   const [dailyBonus, setDailyBonus] = useState<{ visible: boolean; tokens: number; streak: number }>({ visible: false, tokens: 0, streak: 1 });
   const [adLoading, setAdLoading] = useState(false);
   const [loadingPowerUp, setLoadingPowerUp] = useState<PowerUpType | null>(null);
+  const [multiplierLoading, setMultiplierLoading] = useState(false);
 
   useEffect(() => { checkDailyBonus(); }, []);
 
@@ -64,6 +69,23 @@ export default function GameScreen() {
     else Alert.alert('Insufficient Tokens', `You need ${cost} MG to buy this power-up.`);
   }, [activatePowerUp, refreshProfile]);
 
+  const handleMultiplier = useCallback(async () => {
+    if (earningMultiplier > 1 || multiplierLoading) return;
+    setMultiplierLoading(true); setAdLoading(true);
+    try {
+      const result = await showRewardedAd();
+      if (result.watched) {
+        recordMultiplierAd();
+      } else {
+        Alert.alert('Ad Required', 'Watch the full ad to count it toward the MG multiplier.');
+      }
+    } finally {
+      setAdLoading(false); setMultiplierLoading(false);
+    }
+  }, [earningMultiplier, multiplierLoading, recordMultiplierAd]);
+
+  const formatTimer = (seconds: number) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+
   return (
     <LinearGradient colors={['#06251A', '#0B3D2B', '#F4FFF8']} style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.playfield}>
@@ -88,13 +110,26 @@ export default function GameScreen() {
             <ScoreCard label="Earned" value={`+${sessionTokens.toFixed(0)}`} accent />
           </View>
           <LevelProgressBar score={score} level={level} />
+          <View style={styles.multiplierRow}>
+            <View style={styles.multiplierInfo}>
+              <View style={[styles.multiplierIcon, earningMultiplier > 1 && styles.multiplierIconActive]}>
+                <MaterialIcons name="bolt" size={18} color={earningMultiplier > 1 ? '#06251A' : Colors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.multiplierTitle}>{earningMultiplier > 1 ? '3× MG Multiplier Active' : 'MG Earning Multiplier'}</Text>
+                <Text style={styles.multiplierSub}>{earningMultiplier > 1 ? `${formatTimer(multiplierSecondsLeft)} remaining` : `${multiplierAdsWatched}/2 rewarded ads watched`}</Text>
+              </View>
+            </View>
+            <Pressable
+              style={[styles.multiplierButton, (earningMultiplier > 1 || multiplierLoading) && styles.multiplierButtonDisabled]}
+              onPress={handleMultiplier}
+              disabled={earningMultiplier > 1 || multiplierLoading}
+            >
+              <MaterialIcons name={earningMultiplier > 1 ? 'timer' : 'play-circle-outline'} size={17} color={earningMultiplier > 1 ? Colors.textMuted : '#06251A'} />
+              <Text style={[styles.multiplierButtonText, earningMultiplier > 1 && styles.multiplierButtonTextDisabled]}>{earningMultiplier > 1 ? formatTimer(multiplierSecondsLeft) : multiplierLoading ? 'Loading' : 'Watch Ad'}</Text>
+            </Pressable>
+          </View>
           <View style={styles.boardWrapper}><GameBoard /></View>
-        </View>
-
-        <View style={styles.missionStrip}>
-          <MissionButton icon="trending-up" label="Merge higher coins" />
-          <MissionButton icon="auto-awesome" label="Random MG rewards" />
-          <MissionButton icon="account-balance-wallet" label="Withdraw BEP-20" />
         </View>
       </View>
 
@@ -103,17 +138,8 @@ export default function GameScreen() {
       <LevelUpModal />
       <NewTileModal visible={newTierValue !== null} tileValue={newTierValue ?? 4} onDismiss={dismissNewTier} />
       <DailyBonusModal visible={dailyBonus.visible} tokens={dailyBonus.tokens} streak={dailyBonus.streak} onClaim={handleClaimBonus} />
-      <AdLoadingOverlay visible={adLoading} message="Earning your power-up..." />
+      <AdLoadingOverlay visible={adLoading} message="Loading rewarded ad..." />
     </LinearGradient>
-  );
-}
-
-function MissionButton({ icon, label }: { icon: keyof typeof MaterialIcons.glyphMap; label: string }) {
-  return (
-    <View style={styles.missionItem} accessibilityRole="button">
-      <View style={styles.missionIconButton}><MaterialIcons name={icon} size={17} color="#B8FFD9" /></View>
-      <Text style={styles.missionText} numberOfLines={2}>{label}</Text>
-    </View>
   );
 }
 
@@ -148,9 +174,15 @@ const styles = StyleSheet.create({
   levelPill: { backgroundColor: Colors.primary, paddingHorizontal: 10, paddingVertical: 6, borderRadius: Radius.full },
   levelPillText: { ...Typography.smallBold, color: '#fff' },
   scoreRow: { flexDirection: 'row', gap: 6, paddingVertical: 5 },
+  multiplierRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 4, marginBottom: 4, padding: 7, backgroundColor: '#F1FFF7', borderRadius: 14, borderWidth: 1, borderColor: '#B8FFD9' },
+  multiplierInfo: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  multiplierIcon: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: '#E3FFF0', borderWidth: 1, borderColor: '#B8FFD9' },
+  multiplierIconActive: { backgroundColor: '#B8FFD9', borderColor: Colors.primary },
+  multiplierTitle: { fontSize: 12, fontWeight: '800', color: Colors.textPrimary },
+  multiplierSub: { ...Typography.caption, color: Colors.textMuted, marginTop: 1 },
+  multiplierButton: { minHeight: 34, paddingHorizontal: 10, borderRadius: 10, backgroundColor: '#B8FFD9', alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 4 },
+  multiplierButtonDisabled: { backgroundColor: Colors.bgSurface },
+  multiplierButtonText: { fontSize: 11, fontWeight: '800', color: '#06251A' },
+  multiplierButtonTextDisabled: { color: Colors.textMuted },
   boardWrapper: { flex: 1, minHeight: 0, justifyContent: 'center', alignItems: 'center', overflow: 'visible' },
-  missionStrip: { flexDirection: 'row', gap: Spacing.sm, backgroundColor: 'rgba(6,37,26,0.9)', borderRadius: Radius.xl, padding: 6, borderWidth: 1, borderColor: 'rgba(184,255,217,0.25)' },
-  missionItem: { flex: 1, alignItems: 'center', gap: 3, paddingVertical: 2 },
-  missionIconButton: { width: 30, height: 30, borderRadius: 9, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(184,255,217,0.10)', borderWidth: 1, borderColor: 'rgba(184,255,217,0.22)' },
-  missionText: { ...Typography.caption, color: '#DFFFF0', textAlign: 'center', fontSize: 9 },
 });
