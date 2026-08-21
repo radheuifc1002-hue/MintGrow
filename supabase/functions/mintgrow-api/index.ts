@@ -6,14 +6,12 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-  });
+const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
+  status,
+  headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+});
 
-const hex = (bytes: ArrayBuffer) =>
-  Array.from(new Uint8Array(bytes)).map((b) => b.toString(16).padStart(2, '0')).join('');
+const hex = (bytes: ArrayBuffer) => Array.from(new Uint8Array(bytes)).map((b) => b.toString(16).padStart(2, '0')).join('');
 
 async function hmac(key: ArrayBuffer | CryptoKey, data: string): Promise<ArrayBuffer> {
   const cryptoKey = key instanceof CryptoKey
@@ -28,19 +26,13 @@ async function verifyTelegramInitData(initData: string, botToken: string) {
   const suppliedHash = params.get('hash');
   if (!suppliedHash) throw new Error('telegram_hash_missing');
   params.delete('hash');
-
   const pairs = [...params.entries()].sort(([a], [b]) => a.localeCompare(b));
   const dataCheckString = pairs.map(([key, value]) => `${key}=${value}`).join('\n');
-
   const secretKey = await hmac(new TextEncoder().encode('WebAppData').buffer, botToken);
   const calculatedHash = hex(await hmac(secretKey, dataCheckString));
   if (calculatedHash !== suppliedHash) throw new Error('telegram_signature_invalid');
-
   const authDate = Number(params.get('auth_date') ?? 0);
-  if (!Number.isFinite(authDate) || Math.floor(Date.now() / 1000) - authDate > 86400) {
-    throw new Error('telegram_init_data_expired');
-  }
-
+  if (!Number.isFinite(authDate) || Math.floor(Date.now() / 1000) - authDate > 86400) throw new Error('telegram_init_data_expired');
   const rawUser = params.get('user');
   if (!rawUser) throw new Error('telegram_user_missing');
   const user = JSON.parse(rawUser) as { id?: number; username?: string; first_name?: string; photo_url?: string };
@@ -49,13 +41,9 @@ async function verifyTelegramInitData(initData: string, botToken: string) {
 }
 
 const ACTIONS = new Set([
-  'ensure_player',
-  'ensure_referral_code',
-  'credit_player_tokens',
-  'record_ad_event',
-  'record_game_session',
-  'apply_referral_code',
-  'submit_withdrawal_request',
+  'get_player', 'ensure_player', 'ensure_referral_code', 'complete_registration',
+  'credit_player_tokens', 'record_ad_event', 'record_game_session', 'apply_referral_code',
+  'submit_withdrawal_request', 'get_referrals', 'get_withdrawals', 'get_leaderboard', 'get_player_rank',
 ]);
 
 Deno.serve(async (req) => {
@@ -65,7 +53,6 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json();
     const action = String(body?.action ?? '');
-    const initData = String(body?.initData ?? '');
     if (!ACTIONS.has(action)) return json({ error: 'unsupported_action' }, 400);
 
     const botToken = Deno.env.get('TELEGRAM_BOT_TOKEN');
@@ -73,17 +60,52 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     if (!botToken || !serviceRole || !supabaseUrl) return json({ error: 'server_not_configured' }, 500);
 
-    const telegramUser = await verifyTelegramInitData(initData, botToken);
+    const telegramUser = await verifyTelegramInitData(String(body?.initData ?? ''), botToken);
     const telegramId = String(telegramUser.id);
-    const adminClient = createClient(supabaseUrl, serviceRole, { auth: { persistSession: false } });
-
+    const db = createClient(supabaseUrl, serviceRole, { auth: { persistSession: false } });
     const p = body?.params ?? {};
-    const suppliedTelegramId = p.telegramId ?? p.p_telegram_id ?? telegramId;
-    if (String(suppliedTelegramId) !== telegramId) return json({ error: 'telegram_identity_mismatch' }, 403);
+    const requestedId = p.telegramId ?? p.p_telegram_id ?? telegramId;
+    if (String(requestedId) !== telegramId) return json({ error: 'telegram_identity_mismatch' }, 403);
+
+    if (action === 'get_player') {
+      const { data, error } = await db.from('players').select('*').eq('telegram_id', telegramId).maybeSingle();
+      if (error) return json({ error: error.message }, 400);
+      return json({ data, telegramId });
+    }
+
+    if (action === 'get_referrals') {
+      const { data, error } = await db.from('referrals')
+        .select('referrer_telegram_id, referee_telegram_id, level, tokens_earned, created_at, players!referrals_referee_telegram_id_fkey(username, total_tokens)')
+        .eq('referrer_telegram_id', telegramId)
+        .order('created_at', { ascending: false }).limit(100);
+      if (error) return json({ error: error.message }, 400);
+      return json({ data: data ?? [], telegramId });
+    }
+
+    if (action === 'get_withdrawals') {
+      const { data, error } = await db.from('withdrawals').select('*').eq('telegram_id', telegramId).order('created_at', { ascending: false }).limit(50);
+      if (error) return json({ error: error.message }, 400);
+      return json({ data: data ?? [], telegramId });
+    }
+
+    if (action === 'get_leaderboard') {
+      const limit = Math.min(Math.max(Number(p.limit ?? 50), 1), 100);
+      const { data, error } = await db.from('players').select('telegram_id, username, total_tokens, level, best_score').order('total_tokens', { ascending: false }).order('best_score', { ascending: false }).limit(limit);
+      if (error) return json({ error: error.message }, 400);
+      return json({ data: data ?? [], telegramId });
+    }
+
+    if (action === 'get_player_rank') {
+      const { data: player, error: playerError } = await db.from('players').select('total_tokens').eq('telegram_id', telegramId).maybeSingle();
+      if (playerError) return json({ error: playerError.message }, 400);
+      if (!player) return json({ data: null, telegramId });
+      const { count, error } = await db.from('players').select('telegram_id', { count: 'exact', head: true }).gt('total_tokens', player.total_tokens ?? 0);
+      if (error) return json({ error: error.message }, 400);
+      return json({ data: (count ?? 0) + 1, telegramId });
+    }
 
     let rpc = action;
     let args: Record<string, unknown> = {};
-
     switch (action) {
       case 'ensure_player':
         rpc = 'ensure_player';
@@ -91,6 +113,10 @@ Deno.serve(async (req) => {
         break;
       case 'ensure_referral_code':
         args = { p_telegram_id: telegramId };
+        break;
+      case 'complete_registration':
+        rpc = 'complete_player_registration';
+        args = { p_telegram_id: telegramId, p_username: p.username ?? telegramUser.username ?? telegramUser.first_name ?? `User${telegramId}` };
         break;
       case 'credit_player_tokens':
         args = { p_telegram_id: telegramId, p_amount: p.amount, p_best_score: p.bestScore ?? null, p_level: p.level ?? null };
@@ -109,7 +135,7 @@ Deno.serve(async (req) => {
         break;
     }
 
-    const { data, error } = await adminClient.rpc(rpc, args);
+    const { data, error } = await db.rpc(rpc, args);
     if (error) return json({ error: error.message }, 400);
     return json({ data, telegramId });
   } catch (error) {
