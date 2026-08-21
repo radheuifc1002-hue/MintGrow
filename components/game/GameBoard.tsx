@@ -2,17 +2,20 @@ import React, { useRef } from 'react';
 import { View, StyleSheet, useWindowDimensions, PanResponder, Text, Platform } from 'react-native';
 import { useGame } from '@/hooks/useGame';
 import { GameTile } from './GameTile';
-import { Colors, Radius, Typography } from '@/constants/theme';
+import { Radius, Typography } from '@/constants/theme';
 
 const BOARD_SIZE = 4;
-const GAP = 6;
+const GAP = 5;
 
 function getBoardMetrics(width: number, height: number) {
-  const availableWidth = Math.max(240, width - 24);
-  const availableHeight = Math.max(240, height * 0.50);
-  const boardW = Math.min(availableWidth, availableHeight, 380);
-  const tileSize = Math.max(Math.floor((boardW - GAP * (BOARD_SIZE + 1)) / BOARD_SIZE), 52);
-  return { tileSize, boardDim: tileSize * BOARD_SIZE + GAP * (BOARD_SIZE + 1) };
+  // Telegram Mini Apps lose vertical space to Telegram chrome and the tab bar.
+  // Size the board from both axes so it never grows underneath the controls.
+  const widthLimit = Math.max(250, width - 34);
+  const heightLimit = Math.max(250, height * 0.40);
+  const boardW = Math.min(widthLimit, heightLimit, 348);
+  const tileSize = Math.max(50, Math.floor((boardW - GAP * (BOARD_SIZE + 1)) / BOARD_SIZE));
+  const boardDim = tileSize * BOARD_SIZE + GAP * (BOARD_SIZE + 1);
+  return { tileSize, boardDim };
 }
 
 export function GameBoard() {
@@ -36,8 +39,11 @@ export function GameBoard() {
   return (
     <View style={styles.frame}>
       <View style={styles.topRail} pointerEvents="none">
-        <Text style={styles.railText}>SWIPE TO MERGE</Text>
-        <View style={styles.liveDot} />
+        <View style={styles.railTitle}>
+          <View style={styles.railMark} />
+          <Text style={styles.railText}>SWIPE TO MERGE</Text>
+        </View>
+        <Text style={styles.railHint}>4 × 4</Text>
       </View>
       <View
         style={[styles.container, { width: boardDim, height: boardDim }, Platform.OS === 'web' && ({ touchAction: 'none', userSelect: 'none' } as any)]}
@@ -59,23 +65,24 @@ export function GameBoard() {
 
 const styles = StyleSheet.create({
   frame: {
-    backgroundColor: '#09291D', borderRadius: Radius.xl, padding: 7,
-    borderWidth: 2, borderColor: '#1DE89B', shadowColor: Colors.primary,
-    shadowOpacity: 0.24, shadowRadius: 18, elevation: 10, alignSelf: 'center',
+    backgroundColor: '#062A1D', borderRadius: Radius.xl, padding: 7,
+    borderWidth: 1.5, borderColor: '#19D98F', shadowColor: '#00A86B',
+    shadowOpacity: 0.22, shadowRadius: 16, elevation: 8, alignSelf: 'center',
   },
   topRail: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: 5, paddingBottom: 6,
+    height: 27, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: 5,
   },
-  railText: { ...Typography.caption, color: '#B8FFD9', letterSpacing: 1.1, textTransform: 'uppercase' },
-  liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#23F0A7' },
+  railTitle: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  railMark: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#31EBAA' },
+  railText: { ...Typography.caption, color: '#D4FFE8', letterSpacing: 1.1, fontWeight: '800' },
+  railHint: { ...Typography.caption, color: '#8CC8AD', fontWeight: '700' },
   container: {
-    backgroundColor: '#103D2C', borderRadius: Radius.lg, position: 'relative',
-    borderWidth: 1.5, borderColor: 'rgba(184,255,217,0.35)',
-    shadowColor: Colors.primary, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4,
+    backgroundColor: '#0C3A2A', borderRadius: Radius.lg, position: 'relative',
+    borderWidth: 1, borderColor: 'rgba(184,255,217,0.28)',
   },
   emptyCell: {
-    position: 'absolute', backgroundColor: 'rgba(255,255,255,0.08)',
-    borderRadius: Radius.sm, borderWidth: 1, borderColor: 'rgba(184,255,217,0.18)',
+    position: 'absolute', backgroundColor: 'rgba(255,255,255,0.055)',
+    borderRadius: 10, borderWidth: 1, borderColor: 'rgba(184,255,217,0.16)',
   },
 });
