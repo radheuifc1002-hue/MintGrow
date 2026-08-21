@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, Pressable, ActivityIndicator } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { Colors, Spacing, Radius, Typography } from '@/constants/theme';
+import { Colors, Radius } from '@/constants/theme';
 import { POWER_UPS, PowerUpType } from '@/types/game';
 import { useGame } from '@/hooks/useGame';
 
@@ -11,7 +11,7 @@ export function PowerUpBar({ onWatchAd, onSpendTokens, loading }: Props) {
   const { profile, isSelectingDestroy, cancelDestroy } = useGame();
   if (isSelectingDestroy) return (
     <View style={styles.destroyBanner}>
-      <MaterialIcons name="ads-click" size={18} color={Colors.error} />
+      <MaterialIcons name="ads-click" size={20} color={Colors.error} />
       <Text style={styles.destroyText}>Select a tile on the board to destroy it</Text>
       <Pressable onPress={cancelDestroy} style={styles.cancelBtn}><Text style={styles.cancelText}>Cancel</Text></Pressable>
     </View>
@@ -22,7 +22,7 @@ export function PowerUpBar({ onWatchAd, onSpendTokens, loading }: Props) {
       const isLoading = loading === pu.type;
       const iconName = pu.icon as keyof typeof MaterialIcons.glyphMap;
       return <Pressable key={pu.type} style={({ pressed }) => [styles.powerUpBtn, owned > 0 && styles.powerUpBtnOwned, pressed && styles.pressed]} onPress={() => onWatchAd(pu.type)} disabled={isLoading} accessibilityRole="button" accessibilityLabel={pu.label}>
-        {isLoading ? <ActivityIndicator size="small" color={Colors.primary} /> : <View style={styles.iconBox}><MaterialIcons name={iconName} size={20} color={owned > 0 ? Colors.primary : Colors.textPrimary} /></View>}
+        {isLoading ? <ActivityIndicator size="small" color={Colors.primary} /> : <View style={styles.iconBox}><MaterialIcons name={iconName} size={28} color={owned > 0 ? Colors.primary : '#123B2D'} /></View>}
         {owned > 0 && <View style={styles.badge}><Text style={styles.badgeText}>{owned}</Text></View>}
         <Text style={styles.label} numberOfLines={1}>{pu.label}</Text>
         <Text style={owned === 0 ? styles.adHint : styles.useHint}>{owned === 0 ? 'Watch Ad' : 'Tap to use'}</Text>
@@ -32,19 +32,19 @@ export function PowerUpBar({ onWatchAd, onSpendTokens, loading }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: { backgroundColor: Colors.bgCard, borderTopWidth: 1, borderTopColor: Colors.border, paddingHorizontal: Spacing.sm, paddingVertical: Spacing.sm },
-  row: { flexDirection: 'row', gap: Spacing.xs, justifyContent: 'space-between' },
-  powerUpBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.bgSurface, borderRadius: Radius.md, borderWidth: 1.5, borderColor: Colors.border, paddingVertical: 8, paddingHorizontal: 4, minHeight: 72, position: 'relative', gap: 2 },
-  powerUpBtnOwned: { borderColor: Colors.primary, backgroundColor: Colors.primaryGlow },
+  container: { backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#D4E9DC', paddingHorizontal: 16, paddingTop: 16, paddingBottom: 14 },
+  row: { flexDirection: 'row', gap: 9, justifyContent: 'space-between' },
+  powerUpBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F6FAF7', borderRadius: 18, borderWidth: 2, borderColor: '#D1E8D8', paddingVertical: 12, paddingHorizontal: 3, minHeight: 132, position: 'relative', gap: 5 },
+  powerUpBtnOwned: { borderColor: Colors.primary, backgroundColor: '#E8FFF1' },
   pressed: { opacity: 0.72, transform: [{ scale: 0.98 }] },
-  iconBox: { width: 30, height: 30, borderRadius: 9, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border, justifyContent: 'center' },
-  badge: { position: 'absolute', top: 4, right: 4, backgroundColor: Colors.primary, borderRadius: 8, minWidth: 16, height: 16, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 2 },
-  badgeText: { fontSize: 9, fontWeight: '800', color: '#fff' },
-  label: { ...Typography.caption, color: Colors.textPrimary, fontWeight: '600', textAlign: 'center', fontSize: 9 },
-  adHint: { fontSize: 8, color: Colors.warning, textAlign: 'center', fontWeight: '600' },
-  useHint: { fontSize: 8, color: Colors.primary, textAlign: 'center', fontWeight: '600' },
-  destroyBanner: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, backgroundColor: 'rgba(211,47,47,0.08)', paddingVertical: Spacing.sm, paddingHorizontal: Spacing.md, borderTopWidth: 1.5, borderTopColor: Colors.error, minHeight: 52 },
-  destroyText: { ...Typography.small, color: Colors.error, flex: 1 },
-  cancelBtn: { backgroundColor: Colors.error, borderRadius: Radius.sm, paddingVertical: 6, paddingHorizontal: 12 },
-  cancelText: { ...Typography.caption, color: '#fff', fontWeight: '700' },
+  iconBox: { width: 48, height: 48, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF', borderWidth: 1.5, borderColor: '#D7E9DD' },
+  badge: { position: 'absolute', top: 7, right: 7, backgroundColor: Colors.primary, borderRadius: 9, minWidth: 18, height: 18, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 },
+  badgeText: { fontSize: 10, fontWeight: '900', color: '#fff' },
+  label: { color: '#153B2E', fontWeight: '800', textAlign: 'center', fontSize: 10, lineHeight: 13 },
+  adHint: { fontSize: 9, color: '#E28A31', textAlign: 'center', fontWeight: '900' },
+  useHint: { fontSize: 9, color: Colors.primary, textAlign: 'center', fontWeight: '900' },
+  destroyBanner: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#FFF6F6', paddingVertical: 13, paddingHorizontal: 16, borderTopWidth: 1.5, borderTopColor: Colors.error, minHeight: 56 },
+  destroyText: { color: Colors.error, flex: 1, fontSize: 12, fontWeight: '700' },
+  cancelBtn: { backgroundColor: Colors.error, borderRadius: 8, paddingVertical: 7, paddingHorizontal: 12 },
+  cancelText: { color: '#fff', fontSize: 11, fontWeight: '800' },
 });
