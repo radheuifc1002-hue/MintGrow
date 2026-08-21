@@ -1,14 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PlayerProfile, WithdrawalRequest, PowerUpType, DEFAULT_POWER_UPS, ReferralEntry } from '@/types/game';
-import { supabase } from '@/services/supabase';
+import { verifiedApi } from '@/services/verifiedApi';
 
-const KEYS = {
-  PROFILE: 'mintgrow_profile_v3',
-  DAILY_BONUS: 'mintgrow_daily_bonus',
-  SAVED_BOARD: 'mintgrow_saved_board',
-};
-
-// ─── Helpers ────────────────────────────────────────────────────────────────
+const KEYS = { PROFILE: 'mintgrow_profile_v4', DAILY_BONUS: 'mintgrow_daily_bonus_v2', SAVED_BOARD: 'mintgrow_saved_board' };
 
 export const generateReferralCode = (telegramId: string): string => {
   const base = telegramId.replace(/\D/g, '').slice(-4) || '0000';
@@ -17,459 +11,145 @@ export const generateReferralCode = (telegramId: string): string => {
 };
 
 export const createDefaultProfile = (telegramId: string, username: string): PlayerProfile => ({
-  telegramId,
-  username,
-  referralCode: generateReferralCode(telegramId),
-  referredBy: undefined,
-  referralCount: 0,
-  referralTokensEarned: 0,
-  totalTokens: 0,
-  pendingTokens: 0,
-  withdrawnTokens: 0,
-  walletAddress: '',
-  level: 1,
-  gamesPlayed: 0,
-  bestScore: 0,
-  adsWatched: 0,
-  lastLoginDate: undefined,
-  loginStreak: 0,
-  powerUps: { ...DEFAULT_POWER_UPS },
-  isRegistered: false,
+  telegramId, username, referralCode: '', referredBy: undefined, referralCount: 0,
+  referralTokensEarned: 0, totalTokens: 0, pendingTokens: 0, withdrawnTokens: 0,
+  walletAddress: '', level: 1, gamesPlayed: 0, bestScore: 0, adsWatched: 0,
+  lastLoginDate: undefined, loginStreak: 0, powerUps: { ...DEFAULT_POWER_UPS }, isRegistered: false,
 });
 
 const mapRowToProfile = (row: any): PlayerProfile => ({
-  telegramId: row.telegram_id,
-  username: row.username,
-  referralCode: row.referral_code,
-  referredBy: row.referred_by ?? undefined,
-  referralCount: row.direct_referral_count ?? 0,
-  referralTokensEarned: parseFloat(row.referral_tokens_earned ?? '0'),
-  totalTokens: parseFloat(row.total_tokens ?? '0'),
-  pendingTokens: parseFloat(row.pending_tokens ?? '0'),
-  withdrawnTokens: parseFloat(row.withdrawn_tokens ?? '0'),
-  walletAddress: row.wallet_address ?? '',
-  level: row.level ?? 1,
-  gamesPlayed: row.games_played ?? 0,
-  bestScore: row.best_score ?? 0,
-  adsWatched: row.ads_watched ?? 0,
-  lastLoginDate: row.last_login_date ?? undefined,
-  loginStreak: row.login_streak ?? 0,
-  powerUps: row.power_ups ?? { ...DEFAULT_POWER_UPS },
-  isRegistered: row.is_registered ?? true,
+  telegramId: String(row.telegram_id), username: row.username ?? 'CryptoPlayer',
+  referralCode: row.referral_code ?? '', referredBy: row.referred_by ?? undefined,
+  referralCount: Number(row.direct_referral_count ?? 0), referralTokensEarned: Number(row.referral_tokens_earned ?? 0),
+  totalTokens: Number(row.total_tokens ?? 0), pendingTokens: Number(row.pending_tokens ?? 0), withdrawnTokens: Number(row.withdrawn_tokens ?? 0),
+  walletAddress: row.wallet_address ?? '', level: Number(row.level ?? 1), gamesPlayed: Number(row.games_played ?? 0),
+  bestScore: Number(row.best_score ?? 0), adsWatched: Number(row.ads_watched ?? 0), lastLoginDate: row.last_login_date ?? undefined,
+  loginStreak: Number(row.login_streak ?? 0), powerUps: row.power_ups ?? { ...DEFAULT_POWER_UPS }, isRegistered: Boolean(row.is_registered),
 });
 
-const profileToRow = (p: PlayerProfile) => ({
-  telegram_id: p.telegramId,
-  username: p.username,
-  referral_code: p.referralCode,
-  referred_by: p.referredBy ?? null,
-  direct_referral_count: p.referralCount,
-  referral_tokens_earned: p.referralTokensEarned,
-  total_tokens: p.totalTokens,
-  pending_tokens: p.pendingTokens,
-  withdrawn_tokens: p.withdrawnTokens,
-  wallet_address: p.walletAddress,
-  level: p.level,
-  games_played: p.gamesPlayed,
-  best_score: p.bestScore,
-  ads_watched: p.adsWatched,
-  last_login_date: p.lastLoginDate ?? null,
-  login_streak: p.loginStreak,
-  power_ups: p.powerUps,
-});
-
-// ─── Profile (Supabase + Local fallback) ────────────────────────────────────
+const cacheProfile = async (profile: PlayerProfile) => AsyncStorage.setItem(KEYS.PROFILE, JSON.stringify(profile));
 
 export const getProfile = async (): Promise<PlayerProfile | null> => {
   try {
-    // Try local first for speed
     const raw = await AsyncStorage.getItem(KEYS.PROFILE);
-    if (raw) {
-      const p: PlayerProfile = JSON.parse(raw);
-      if (!p.powerUps) p.powerUps = { ...DEFAULT_POWER_UPS };
-      if (!p.referralCode) p.referralCode = generateReferralCode(p.telegramId);
-      if (p.loginStreak === undefined) p.loginStreak = 0;
-      if (p.referralCount === undefined) p.referralCount = 0;
-      if (p.referralTokensEarned === undefined) p.referralTokensEarned = 0;
-      // Sync from Supabase in background
-      syncProfileFromSupabase(p.telegramId).catch(() => {});
-      return p;
-    }
-    return null;
+    if (!raw) return null;
+    const p = JSON.parse(raw) as PlayerProfile;
+    if (!p.powerUps) p.powerUps = { ...DEFAULT_POWER_UPS };
+    void syncProfileFromSupabase(p.telegramId);
+    return p;
   } catch { return null; }
 };
 
 export const syncProfileFromSupabase = async (telegramId: string): Promise<PlayerProfile | null> => {
   try {
-    const { data, error } = await supabase
-      .from('players')
-      .select('*')
-      .eq('telegram_id', telegramId)
-      .single();
-    if (error || !data) return null;
-    const p = mapRowToProfile(data);
-    await AsyncStorage.setItem(KEYS.PROFILE, JSON.stringify(p));
-    return p;
+    const row = await verifiedApi<any>('get_player', { telegramId });
+    if (!row) return null;
+    const p = mapRowToProfile(row); await cacheProfile(p); return p;
   } catch { return null; }
 };
 
 export const saveProfile = async (profile: PlayerProfile): Promise<void> => {
-  await AsyncStorage.setItem(KEYS.PROFILE, JSON.stringify(profile));
-
-  // Keep the remote player row in sync when Supabase is available, but never
-  // roll back a successful local save because the user may be temporarily
-  // offline inside the Telegram in-app browser.
+  await cacheProfile(profile);
   try {
-    const row = profileToRow(profile);
-    const { error } = await supabase.from('players').upsert(row, { onConflict: 'telegram_id' });
-    if (error) console.error('Failed to sync profile to Supabase:', error.message);
-  } catch (error) {
-    console.error('Failed to sync profile to Supabase:', error);
-  }
+    const row = await verifiedApi<any>('update_profile_metadata', {
+      telegramId: profile.telegramId, username: profile.username, avatarUrl: profile.avatarUrl,
+      walletAddress: profile.walletAddress, bestScore: profile.bestScore, level: profile.level,
+      lastLoginDate: profile.lastLoginDate, loginStreak: profile.loginStreak, powerUps: profile.powerUps,
+    });
+    if (row) await cacheProfile(mapRowToProfile(row));
+  } catch (error) { console.warn('Profile metadata sync failed:', error instanceof Error ? error.message : error); }
 };
 
 export const initOrLoadProfile = async (telegramId: string, username: string, avatarUrl?: string): Promise<PlayerProfile> => {
-  // Check Supabase first
-  try {
-    const { data } = await supabase
-      .from('players')
-      .select('*')
-      .eq('telegram_id', telegramId)
-      .single();
-    if (data) {
-      const p = mapRowToProfile(data);
-      await AsyncStorage.setItem(KEYS.PROFILE, JSON.stringify(p));
-      return p;
-    }
-  } catch {}
-
-  // Create new
-  const p = createDefaultProfile(telegramId, username);
-  await saveProfile(p);
-  return p;
+  const row = await verifiedApi<any>('ensure_player', { telegramId, username, avatarUrl });
+  const p = mapRowToProfile(row); await cacheProfile(p); return p;
 };
 
 export const updateProfileTokens = async (tokens: number, score: number): Promise<PlayerProfile | null> => {
-  const profile = await getProfile();
-  if (!profile) return null;
-  profile.totalTokens = Math.round((profile.totalTokens + tokens) * 100) / 100;
-  if (score > profile.bestScore) profile.bestScore = score;
-  const { getLevelFromScore } = await import('@/services/gameEngine');
-  profile.level = Math.max(profile.level || 1, getLevelFromScore(score));
-  await saveProfile(profile);
-  return profile;
+  if (!Number.isFinite(tokens) || tokens <= 0) return getProfile();
+  const current = await getProfile(); if (!current) return null;
+  try {
+    const row = await verifiedApi<any>('credit_player_tokens', {
+      telegramId: current.telegramId, amount: tokens, bestScore: score,
+      level: Math.max(current.level || 1, (await import('@/services/gameEngine')).getLevelFromScore(score)),
+    });
+    const p = mapRowToProfile(row); await cacheProfile(p); return p;
+  } catch (error) { console.warn('Token credit failed:', error instanceof Error ? error.message : error); return current; }
 };
 
-export const incrementAdsWatched = async (): Promise<void> => {
-  const profile = await getProfile();
-  if (!profile) return;
-  profile.adsWatched += 1;
-  await saveProfile(profile);
-};
-
-// ─── Power-Ups ──────────────────────────────────────────────────────────────
+export const incrementAdsWatched = async (): Promise<void> => {};
 
 export const addPowerUp = async (type: PowerUpType): Promise<PlayerProfile | null> => {
-  const p = await getProfile();
-  if (!p) return null;
-  if (!p.powerUps) p.powerUps = { ...DEFAULT_POWER_UPS };
-  p.powerUps[type] = (p.powerUps[type] || 0) + 1;
-  await saveProfile(p);
-  return p;
-};
-
-export const usePowerUp = async (type: PowerUpType): Promise<PlayerProfile | null> => {
-  const p = await getProfile();
-  if (!p || !p.powerUps || (p.powerUps[type] || 0) <= 0) return null;
-  p.powerUps[type] = Math.max(0, (p.powerUps[type] || 0) - 1);
-  await saveProfile(p);
-  return p;
-};
-
-export const spendTokensForPowerUp = async (type: PowerUpType, cost: number): Promise<PlayerProfile | null> => {
-  const p = await getProfile();
-  if (!p || p.totalTokens < cost) return null;
-  p.totalTokens = Math.round((p.totalTokens - cost) * 100) / 100;
-  if (!p.powerUps) p.powerUps = { ...DEFAULT_POWER_UPS };
-  p.powerUps[type] = (p.powerUps[type] || 0) + 1;
-  await saveProfile(p);
-  return p;
-};
-
-// ─── Daily Bonus ─────────────────────────────────────────────────────────────
-
-export interface DailyBonusState {
-  lastClaimDate: string | null;
-  streak: number;
-}
-
-export const getDailyBonusState = async (): Promise<DailyBonusState> => {
+  const current = await getProfile(); if (!current) return null;
   try {
-    const raw = await AsyncStorage.getItem(KEYS.DAILY_BONUS);
-    if (!raw) return { lastClaimDate: null, streak: 0 };
-    return JSON.parse(raw);
-  } catch { return { lastClaimDate: null, streak: 0 }; }
-};
-
-export const claimDailyBonus = async (): Promise<{ tokens: number; streak: number } | null> => {
-  const state = await getDailyBonusState();
-  const today = new Date().toDateString();
-  if (state.lastClaimDate === today) return null;
-
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  const isConsecutive = state.lastClaimDate === yesterday.toDateString();
-  const newStreak = isConsecutive ? Math.min(state.streak + 1, 7) : 1;
-  const streakRewards = [50, 100, 150, 200, 250, 350, 500];
-  const tokens = streakRewards[Math.min(newStreak - 1, 6)];
-
-  await AsyncStorage.setItem(KEYS.DAILY_BONUS, JSON.stringify({ lastClaimDate: today, streak: newStreak }));
-
-  const profile = await getProfile();
-  if (profile) {
-    profile.totalTokens = Math.round((profile.totalTokens + tokens) * 100) / 100;
-    profile.loginStreak = newStreak;
-    profile.lastLoginDate = today;
-    await saveProfile(profile);
-  }
-
-  return { tokens, streak: newStreak };
-};
-
-// ─── Saved Board ─────────────────────────────────────────────────────────────
-
-export const getSavedBoard = async (): Promise<any | null> => {
-  try {
-    const raw = await AsyncStorage.getItem(KEYS.SAVED_BOARD);
-    return raw ? JSON.parse(raw) : null;
+    const clientEventId = `powerup_${current.telegramId}_${type}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const row = await verifiedApi<any>('grant_powerup', { telegramId: current.telegramId, type, clientEventId });
+    const p = mapRowToProfile(row); await cacheProfile(p); return p;
   } catch { return null; }
 };
 
-export const saveBoardState = async (state: any): Promise<void> => {
+export const usePowerUp = async (type: PowerUpType): Promise<PlayerProfile | null> => {
+  const current = await getProfile(); if (!current) return null;
   try {
-    await AsyncStorage.setItem(KEYS.SAVED_BOARD, JSON.stringify(state));
-  } catch {}
+    const row = await verifiedApi<any>('consume_powerup', { telegramId: current.telegramId, type });
+    const p = mapRowToProfile(row); await cacheProfile(p); return p;
+  } catch { return null; }
 };
 
-export const clearSavedBoard = async (): Promise<void> => {
+export const spendTokensForPowerUp = async (type: PowerUpType, cost: number): Promise<PlayerProfile | null> => {
+  const current = await getProfile(); if (!current) return null;
   try {
-    await AsyncStorage.removeItem(KEYS.SAVED_BOARD);
-  } catch {}
+    const row = await verifiedApi<any>('spend_tokens_for_powerup', { telegramId: current.telegramId, type, cost });
+    const p = mapRowToProfile(row); await cacheProfile(p); return p;
+  } catch { return null; }
 };
 
-// ─── Withdrawals (Supabase) ──────────────────────────────────────────────────
+export interface DailyBonusState { lastClaimDate: string | null; streak: number; }
+export const getDailyBonusState = async (): Promise<DailyBonusState> => {
+  try { const raw = await AsyncStorage.getItem(KEYS.DAILY_BONUS); return raw ? JSON.parse(raw) : { lastClaimDate: null, streak: 0 }; }
+  catch { return { lastClaimDate: null, streak: 0 }; }
+};
+
+export const claimDailyBonus = async (): Promise<{ tokens: number; streak: number } | null> => {
+  try {
+    const result = await verifiedApi<any>('claim_daily_bonus');
+    if (!result?.ok) return null;
+    await AsyncStorage.setItem(KEYS.DAILY_BONUS, JSON.stringify({ lastClaimDate: new Date().toDateString(), streak: Number(result.streak ?? 1) }));
+    const profile = await getProfile(); if (profile?.telegramId) await syncProfileFromSupabase(profile.telegramId);
+    return { tokens: Number(result.tokens ?? 0), streak: Number(result.streak ?? 1) };
+  } catch { return null; }
+};
+
+export const getSavedBoard = async (): Promise<any | null> => { try { const raw = await AsyncStorage.getItem(KEYS.SAVED_BOARD); return raw ? JSON.parse(raw) : null; } catch { return null; } };
+export const saveBoardState = async (state: any): Promise<void> => { try { await AsyncStorage.setItem(KEYS.SAVED_BOARD, JSON.stringify(state)); } catch {} };
+export const clearSavedBoard = async (): Promise<void> => { try { await AsyncStorage.removeItem(KEYS.SAVED_BOARD); } catch {} };
+
+const mapWithdrawal = (r: any): WithdrawalRequest => ({ id: String(r.id), telegramId: String(r.telegram_id), username: String(r.username), amount: Number(r.amount ?? 0), walletAddress: String(r.wallet_address ?? ''), network: String(r.network ?? ''), status: r.status as WithdrawalRequest['status'], createdAt: String(r.created_at), processedAt: r.processed_at ? String(r.processed_at) : undefined, txHash: r.tx_hash ? String(r.tx_hash) : undefined });
 
 export const getWithdrawals = async (telegramId?: string): Promise<WithdrawalRequest[]> => {
-  try {
-    let query = supabase.from('withdrawals').select('*').order('created_at', { ascending: false });
-    if (telegramId) query = query.eq('telegram_id', telegramId);
-    const { data, error } = await query;
-    if (error || !data) return [];
-    return (data as any[]).map(r => ({
-      id: String(r.id),
-      telegramId: String(r.telegram_id),
-      username: String(r.username),
-      amount: parseFloat(String(r.amount ?? '0')),
-      walletAddress: String(r.wallet_address ?? ''),
-      network: String(r.network ?? ''),
-      status: r.status as WithdrawalRequest['status'],
-      createdAt: String(r.created_at),
-      processedAt: r.processed_at ? String(r.processed_at) : undefined,
-      txHash: r.tx_hash ? String(r.tx_hash) : undefined,
-    }));
-  } catch { return []; }
+  try { const id = telegramId || (await getProfile())?.telegramId; if (!id) return []; const rows = await verifiedApi<any[]>('get_withdrawals', { telegramId: id }); return (rows ?? []).map(mapWithdrawal); }
+  catch { return []; }
 };
 
 export const saveWithdrawal = async (req: WithdrawalRequest): Promise<void> => {
-  const { error } = await supabase.from('withdrawals').insert({
-      id: req.id,
-      telegram_id: req.telegramId,
-      username: req.username,
-      amount: req.amount,
-      wallet_address: req.walletAddress,
-      network: req.network,
-      status: req.status,
-    created_at: req.createdAt,
-  });
-  if (error) throw error;
+  await verifiedApi('submit_withdrawal_request', { id: req.id, telegramId: req.telegramId, username: req.username, amount: req.amount, walletAddress: req.walletAddress, network: req.network });
 };
-
-export const updateWithdrawal = async (id: string, updates: Partial<WithdrawalRequest>): Promise<void> => {
-  const row: any = {};
-  if (updates.status)      row.status = updates.status;
-  if (updates.txHash)      row.tx_hash = updates.txHash;
-  if (updates.processedAt) row.processed_at = updates.processedAt;
-  const { error } = await supabase.from('withdrawals').update(row).eq('id', id);
-  if (error) throw error;
-};
-
-// ─── Referrals (Supabase) ─────────────────────────────────────────────────────
+export const updateWithdrawal = async (_id: string, _updates: Partial<WithdrawalRequest>): Promise<void> => { throw new Error('Player withdrawal status changes are admin-only.'); };
 
 export const getReferrals = async (referrerTelegramId?: string): Promise<ReferralEntry[]> => {
   try {
-    const telegramId = referrerTelegramId || (await getProfile())?.telegramId;
-    if (!telegramId) return [];
-    const { data, error } = await supabase
-      .from('referrals')
-      .select('*, players!referrals_referee_telegram_id_fkey(username, total_tokens)')
-      .eq('referrer_telegram_id', telegramId)
-      .order('created_at', { ascending: false });
-    if (error || !data) return [];
-    return (data as any[]).map(r => ({
-      code: referrerTelegramId ?? telegramId,
-      username: r.players?.username ?? 'Unknown',
-      joinedAt: String(r.created_at),
-      tokensEarned: parseFloat(String(r.tokens_earned ?? '0')),
-      level: Number(r.level ?? 1),
-      refereeBalance: parseFloat(String(r.players?.total_tokens ?? '0')),
-    }));
+    const telegramId = referrerTelegramId || (await getProfile())?.telegramId; if (!telegramId) return [];
+    const rows = await verifiedApi<any[]>('get_referrals', { telegramId });
+    return (rows ?? []).map((r: any) => ({ code: String(r.referee_telegram_id ?? ''), username: r.players?.username ?? 'Unknown', joinedAt: String(r.created_at), tokensEarned: Number(r.tokens_earned ?? 0), level: Number(r.level ?? 1), refereeBalance: Number(r.players?.total_tokens ?? 0) }));
   } catch { return []; }
 };
+export const addReferral = async (_entry: ReferralEntry): Promise<void> => {};
+export const applyReferralCode = async (code: string): Promise<boolean> => { try { const result = await verifiedApi<any>('apply_referral_code', { code: code.trim().toUpperCase() }); return Boolean(result?.ok); } catch { return false; } };
 
-export const addReferral = async (entry: ReferralEntry): Promise<void> => {
-  // Used for demo/simulation only — real referrals go via applyReferralCode
-};
-
-export const applyReferralCode = async (code: string): Promise<boolean> => {
-  const profile = await getProfile();
-  if (!profile || profile.referredBy) return false;
-  if (code.trim().toUpperCase() === profile.referralCode.toUpperCase()) return false;
-
-  // Find the referrer
-  const { data: referrer, error } = await supabase
-    .from('players')
-    .select('telegram_id, direct_referral_count')
-    .eq('referral_code', code.trim().toUpperCase())
-    .single();
-
-  if (error || !referrer) return false;
-
-  // Award welcome bonus to new user
-  profile.referredBy = code.trim().toUpperCase();
-  profile.totalTokens = Math.round((profile.totalTokens + 100) * 100) / 100;
-  await saveProfile(profile);
-
-  // Create referral relationship (level 1)
-  await supabase.from('referrals').upsert({
-    referrer_telegram_id: String((referrer as any).telegram_id),
-    referee_telegram_id: profile.telegramId,
-    level: 1,
-    tokens_earned: 0,
-  }, { onConflict: 'referrer_telegram_id,referee_telegram_id' });
-
-  // Atomic increment via RPC or just fetch+update
-  const { data: rRow } = await supabase
-    .from('players')
-    .select('total_tokens, direct_referral_count')
-    .eq('telegram_id', String((referrer as any).telegram_id))
-    .single();
-  if (rRow) {
-    await supabase.from('players').update({
-      total_tokens: parseFloat(String((rRow as any).total_tokens ?? '0')) + 500,
-      direct_referral_count: Number((rRow as any).direct_referral_count ?? 0) + 1,
-    }).eq('telegram_id', String((referrer as any).telegram_id));
-  }
-
-  return true;
-};
-
-// ─── Leaderboard ─────────────────────────────────────────────────────────────
-
-export interface LeaderboardEntry {
-  rank: number;
-  telegramId: string;
-  username: string;
-  totalTokens: number;
-  level: number;
-  bestScore: number;
-}
-
+export interface LeaderboardEntry { rank: number; telegramId: string; username: string; totalTokens: number; level: number; bestScore: number; }
 export const getLeaderboard = async (limit = 50): Promise<LeaderboardEntry[]> => {
-  try {
-    const { data, error } = await supabase
-      .from('players')
-      .select('telegram_id, username, total_tokens, level, best_score')
-      .not('username', 'is', null)
-      .order('total_tokens', { ascending: false })
-      .order('best_score', { ascending: false })
-      .limit(Math.min(Math.max(limit, 1), 100));
-    if (error || !data) {
-      if (error) console.error('Failed to load leaderboard:', error.message);
-      return [];
-    }
-    return (data as any[]).map((row, i) => ({
-      rank: i + 1,
-      telegramId: row.telegram_id,
-      username: row.username,
-      totalTokens: parseFloat(row.total_tokens ?? '0'),
-      level: row.level ?? 1,
-      bestScore: row.best_score ?? 0,
-    }));
-  } catch { return []; }
+  try { const rows = await verifiedApi<any[]>('get_leaderboard', { limit }); return (rows ?? []).map((row, i) => ({ rank: i + 1, telegramId: row.telegram_id, username: row.username, totalTokens: Number(row.total_tokens ?? 0), level: Number(row.level ?? 1), bestScore: Number(row.best_score ?? 0) })); }
+  catch { return []; }
 };
-
-export const getPlayerRank = async (telegramId: string): Promise<number | null> => {
-  try {
-    const { data: player, error: playerError } = await supabase
-      .from('players')
-      .select('total_tokens')
-      .eq('telegram_id', telegramId)
-      .single();
-    if (playerError || !player) {
-      if (playerError) console.error('Failed to load player rank row:', playerError.message);
-      return null;
-    }
-
-    const totalTokens = parseFloat((player as any).total_tokens ?? '0');
-    const { count, error: countError } = await supabase
-      .from('players')
-      .select('telegram_id', { count: 'exact', head: true })
-      .gt('total_tokens', totalTokens);
-    if (countError) {
-      console.error('Failed to count leaderboard rank:', countError.message);
-      return null;
-    }
-
-    return (count ?? 0) + 1;
-  } catch (error) {
-    console.error('Failed to load player rank:', error);
-    return null;
-  }
-};
-
-// ─── Withdrawal real-time subscription ───────────────────────────────────────
-
-export const subscribeWithdrawalUpdates = (
-  telegramId: string,
-  onUpdate: (withdrawal: WithdrawalRequest) => void
-) => {
-  const channel = supabase
-    .channel(`withdrawals:${telegramId}`)
-    .on(
-      'postgres_changes',
-      {
-        event: 'UPDATE',
-        schema: 'public',
-        table: 'withdrawals',
-        filter: `telegram_id=eq.${telegramId}`,
-      },
-      (payload) => {
-        const r = payload.new;
-        onUpdate({
-          id: String((r as any).id),
-          telegramId: String((r as any).telegram_id),
-          username: String((r as any).username),
-          amount: parseFloat(String((r as any).amount ?? '0')),
-          walletAddress: String((r as any).wallet_address ?? ''),
-          network: String((r as any).network ?? ''),
-          status: (r as any).status as WithdrawalRequest['status'],
-          createdAt: String((r as any).created_at),
-          processedAt: (r as any).processed_at ? String((r as any).processed_at) : undefined,
-          txHash: (r as any).tx_hash ? String((r as any).tx_hash) : undefined,
-        });
-      }
-    )
-    .subscribe();
-
-  return () => supabase.removeChannel(channel);
-};
+export const getPlayerRank = async (_telegramId: string): Promise<number | null> => { try { return (await verifiedApi<number | null>('get_player_rank')) ?? null; } catch { return null; } };
+export const subscribeWithdrawalUpdates = (_telegramId: string, _onUpdate: (withdrawal: WithdrawalRequest) => void) => () => {};

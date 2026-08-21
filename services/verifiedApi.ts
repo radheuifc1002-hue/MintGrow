@@ -1,25 +1,15 @@
 import { supabase } from '@/services/supabase';
 
 export type VerifiedApiAction =
-  | 'get_player'
-  | 'ensure_player'
-  | 'ensure_referral_code'
-  | 'complete_registration'
-  | 'credit_player_tokens'
-  | 'record_ad_event'
-  | 'record_game_session'
-  | 'apply_referral_code'
-  | 'submit_withdrawal_request';
+  | 'get_player' | 'ensure_player' | 'ensure_referral_code' | 'complete_registration'
+  | 'update_profile_metadata' | 'credit_player_tokens' | 'record_ad_event'
+  | 'record_game_session' | 'apply_referral_code' | 'submit_withdrawal_request'
+  | 'get_referrals' | 'get_withdrawals' | 'get_leaderboard' | 'get_player_rank'
+  | 'claim_daily_bonus' | 'spend_tokens_for_powerup' | 'grant_powerup' | 'consume_powerup';
 
 declare global {
   interface Window {
-    Telegram?: {
-      WebApp?: {
-        initData?: string;
-        ready?: () => void;
-        expand?: () => void;
-      };
-    };
+    Telegram?: { WebApp?: { initData?: string; ready?: () => void; expand?: () => void } };
   }
 }
 
@@ -36,10 +26,7 @@ export const verifiedApi = async <T = unknown>(action: VerifiedApiAction, params
   const initData = getTelegramInitData();
   if (!initData) throw new Error('Telegram Mini App identity is unavailable. Open MintGrow inside Telegram.');
 
-  const { data, error } = await supabase.functions.invoke('mintgrow-api', {
-    body: { action, initData, params },
-  });
-
+  const { data, error } = await supabase.functions.invoke('mintgrow-api', { body: { action, initData, params } });
   if (error) throw new Error(error.message || 'MintGrow API request failed');
   if (!data || data.error) throw new Error(data?.error || 'MintGrow API request failed');
   return data.data as T;
