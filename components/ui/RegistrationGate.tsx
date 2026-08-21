@@ -4,6 +4,7 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import { MaterialIcons } from '@expo/vector-icons';
+import { usePathname } from 'expo-router';
 import { Colors, Spacing, Radius, Typography } from '@/constants/theme';
 import { useGame } from '@/hooks/useGame';
 import { recordAdEvent, showRewardedAd } from '@/services/monetag';
@@ -12,20 +13,31 @@ import { AdLoadingOverlay } from './AdLoadingOverlay';
 
 export function RegistrationGate() {
   const { profile, refreshProfile, setProfile } = useGame();
+  const pathname = usePathname();
   const [visible, setVisible] = useState(false);
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
   const [username, setUsername] = useState('');
   const [error, setError] = useState<string | null>(null);
 
+  // Admin routes have their own authentication/authorization flow. The player
+  // registration ad must never cover the admin panel, even if the current
+  // Telegram player has not completed registration.
+  const isAdminRoute = pathname === '/admin' || pathname.startsWith('/admin-panel');
+
   useEffect(() => {
+    if (isAdminRoute) {
+      setVisible(false);
+      return;
+    }
+
     if (profile && profile.isRegistered !== true) {
       setUsername(profile.username || '');
       setVisible(true);
     } else if (profile?.isRegistered === true) {
       setVisible(false);
     }
-  }, [profile]);
+  }, [profile, isAdminRoute]);
 
   const handleWatchAd = async () => {
     if (loading || !profile) return;
@@ -39,8 +51,6 @@ export function RegistrationGate() {
     setLoading(true);
 
     try {
-      // Use Monetag Rewarded Interstitial. Rewarded Popup intentionally redirects
-      // to an advertiser offer page, which is not appropriate for registration.
       const result = await showRewardedAd('rewarded');
       await recordAdEvent('registration', result, result.watched ? 100 : 0, profile.telegramId);
 
@@ -49,9 +59,6 @@ export function RegistrationGate() {
         return;
       }
 
-      // Complete registration directly against Supabase and only unlock the game
-      // after the database confirms the write. Do not add another 100 MG here:
-      // the Telegram bot already creates new players with the 100 MG welcome bonus.
       const { data, error: saveError } = await supabase
         .from('players')
         .update({
@@ -69,8 +76,6 @@ export function RegistrationGate() {
         throw new Error(saveError?.message || 'Your profile could not be saved. Please try again.');
       }
 
-      // Refresh through the normal profile mapper/local cache after the remote
-      // write has succeeded. This prevents a false "activated" state.
       const updatedProfile = {
         ...profile,
         username: cleanUsername,
@@ -93,7 +98,7 @@ export function RegistrationGate() {
     }
   };
 
-  if (!visible) return null;
+  if (isAdminRoute || !visible) return null;
 
   return (
     <>
@@ -147,7 +152,7 @@ export function RegistrationGate() {
             {done ? (
               <View style={styles.successBanner}>
                 <MaterialIcons name="check-circle" size={24} color={Colors.success} />
-                <Text style={styles.successText}>Account activated! 🎉</Text>
+                <Text style={styles.successText}>Account activated!</Text>
               </View>
             ) : (
               <Pressable
