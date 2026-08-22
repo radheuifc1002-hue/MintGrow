@@ -2,9 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 interface IMGStakingRewardMinterV2 { function mintReward(address to, uint256 amount) external; }
 interface IMintGrowControllerV2 {
@@ -14,11 +12,13 @@ interface IMintGrowControllerV2 {
 
 /// @notice Production staking state machine. Intended to run behind a TransparentUpgradeableProxy.
 /// @dev User principal is never withdrawable after approval. A rejected pending request is refunded.
-contract MintGrowStakingV2 is Initializable, ReentrancyGuard {
+contract MintGrowStakingV2 is Initializable {
     using SafeERC20 for IERC20;
 
     uint256 public constant INITIAL_MINIMUM_STAKE = 250_000 ether;
     uint256 public constant INITIAL_MINIMUM_CLAIM = 25_000 ether;
+    uint256 private constant _NOT_ENTERED = 1;
+    uint256 private constant _ENTERED = 2;
 
     enum Status { None, Pending, Active, Rejected }
     struct Position {
@@ -45,6 +45,7 @@ contract MintGrowStakingV2 is Initializable, ReentrancyGuard {
     uint256 public minimumStake;
     uint256 public minimumClaim;
     bool public paused;
+    uint256 private _reentrancyStatus;
 
     mapping(address => Position) private _positions;
     mapping(bytes32 => PendingStake) public pendingStakes;
@@ -62,10 +63,10 @@ contract MintGrowStakingV2 is Initializable, ReentrancyGuard {
     error Paused();
     error Inactive();
     error ClaimTooSmall();
-    error NothingToClaim();
     error OnlyDelegation();
     error TransferFailed();
     error RequestExists();
+    error Reentrancy();
 
     event StakeRequested(bytes32 indexed requestId, address indexed owner, uint256 amount, address indexed relayer);
     event StakeApproved(bytes32 indexed requestId, address indexed owner, uint256 amount, uint256 baseEntitlement, address indexed admin);
@@ -83,17 +84,16 @@ contract MintGrowStakingV2 is Initializable, ReentrancyGuard {
     modifier onlyAdmin() { if (msg.sender != admin) revert Unauthorized(); _; }
     modifier onlyDelegation() { if (msg.sender != delegation) revert OnlyDelegation(); _; }
     modifier whenNotPaused() { if (paused) revert Paused(); _; }
+    modifier nonReentrant() {
+        if (_reentrancyStatus == _ENTERED) revert Reentrancy();
+        _reentrancyStatus = _ENTERED;
+        _;
+        _reentrancyStatus = _NOT_ENTERED;
+    }
 
     constructor() { _disableInitializers(); }
 
-    function initialize(
-        address admin_,
-        address mgs_,
-        address mg_,
-        address delegation_,
-        address rewardMinter_,
-        address controller_
-    ) external initializer {
+    function initialize(address admin_, address mgs_, address mg_, address delegation_, address rewardMinter_, address controller_) external initializer {
         if (admin_ == address(0) || mgs_ == address(0) || mg_ == address(0) || delegation_ == address(0) || rewardMinter_ == address(0) || controller_ == address(0)) revert InvalidAddress();
         admin = admin_;
         mgs = IERC20(mgs_);
@@ -103,6 +103,7 @@ contract MintGrowStakingV2 is Initializable, ReentrancyGuard {
         controller = IMintGrowControllerV2(controller_);
         minimumStake = INITIAL_MINIMUM_STAKE;
         minimumClaim = INITIAL_MINIMUM_CLAIM;
+        _reentrancyStatus = _NOT_ENTERED;
         emit MinimumStakeUpdated(minimumStake);
         emit MinimumClaimUpdated(minimumClaim);
     }
@@ -113,7 +114,7 @@ contract MintGrowStakingV2 is Initializable, ReentrancyGuard {
         if (amount < minimumStake) revert BelowMinimumStake();
         if (pendingRequestOf[owner] != bytes32(0)) revert RequestExists();
         if (_positions[owner].status == Status.Active || _positions[owner].status == Status.Pending) revert ExistingPosition();
-        if (IERC20(mgs).balanceOf(address(this)) < amount) revert TransferFailed();
+        if (mgs.balanceOf(address(this)) < amount) revert TransferFailed();
         pendingStakes[requestId] = PendingStake(owner, amount, uint64(block.timestamp), requestId);
         pendingRequestOf[owner] = requestId;
         emit StakeRequested(requestId, owner, amount, msg.sender);
@@ -125,7 +126,6 @@ contract MintGrowStakingV2 is Initializable, ReentrancyGuard {
         if (p.owner == address(0)) revert NoPendingStake();
         if (pendingRequestOf[p.owner] != requestId) revert InvalidStatus();
         if (!controller.active()) revert Inactive();
-
         Position storage pos = _positions[p.owner];
         pos.principal = p.amount;
         pos.baseEntitlement = p.amount;
@@ -133,7 +133,6 @@ contract MintGrowStakingV2 is Initializable, ReentrancyGuard {
         pos.approvedAt = uint64(block.timestamp);
         pos.lastAccruedAt = uint64(block.timestamp);
         pos.status = Status.Active;
-
         delete pendingStakes[requestId];
         delete pendingRequestOf[p.owner];
         emit StakeApproved(requestId, p.owner, p.amount, p.amount, msg.sender);
@@ -151,26 +150,22 @@ contract MintGrowStakingV2 is Initializable, ReentrancyGuard {
     }
 
     function position(address owner) external view returns (Position memory) { return _positions[owner]; }
-
     function pendingStake(bytes32 requestId) external view returns (PendingStake memory) { return pendingStakes[requestId]; }
 
     function pendingRoi(address owner) public view returns (uint256) {
         Position memory p = _positions[owner];
-        if (p.status != Status.Active) return 0;
-        if (block.timestamp <= p.lastAccruedAt) return 0;
+        if (p.status != Status.Active || block.timestamp <= p.lastAccruedAt) return 0;
         return controller.accrue(p.principal, p.lastAccruedAt, uint64(block.timestamp));
     }
 
     function totalClaimable(address owner) public view returns (uint256) {
         Position memory p = _positions[owner];
         if (p.status != Status.Active) return 0;
-        return claimableBase[owner] + p.baseEntitlement + p.accruedRoi + pendingRoi(owner) - totalClaimed[owner];
+        return p.baseEntitlement + p.accruedRoi + pendingRoi(owner) + claimableBase[owner] - totalClaimed[owner];
     }
 
     /// @notice Claims only MG rewards from the staking contract. MGS principal is permanently locked after approval.
-    function claimReward() external nonReentrant whenNotPaused returns (uint256 total) {
-        total = _claim(msg.sender);
-    }
+    function claimReward() external nonReentrant whenNotPaused returns (uint256 total) { total = _claim(msg.sender); }
 
     function claimable(address owner) external view returns (uint256 base, uint256 roi, uint256 total) {
         Position memory p = _positions[owner];
@@ -203,7 +198,6 @@ contract MintGrowStakingV2 is Initializable, ReentrancyGuard {
     function setRewardMinter(address rewardMinter_) external onlyAdmin { if (rewardMinter_ == address(0)) revert InvalidAddress(); rewardMinter = rewardMinter_; emit RewardMinterUpdated(rewardMinter_); }
     function pause() external onlyAdmin { paused = true; emit Paused(msg.sender); }
     function unpause() external onlyAdmin { paused = false; emit Unpaused(msg.sender); }
-
     function transferAdmin(address newAdmin) external onlyAdmin { if (newAdmin == address(0)) revert InvalidAddress(); emit AdminTransferred(admin, newAdmin); admin = newAdmin; }
 
     uint256[40] private __gap;
