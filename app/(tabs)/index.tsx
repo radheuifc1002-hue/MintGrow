@@ -14,7 +14,7 @@ import { AdLoadingOverlay } from '@/components/ui/AdLoadingOverlay';
 import { Colors } from '@/constants/theme';
 import { BrandMark } from '@/components/ui/BrandMark';
 import { PowerUpType } from '@/types/game';
-import { claimDailyBonus, getDailyBonusState, addPowerUp, spendTokensForPowerUp } from '@/services/storage';
+import { claimDailyBonus, getDailyBonusState, addPowerUp, spendTokensForPowerUp, creditMiningTokens } from '@/services/storage';
 import { showRewardedAd } from '@/services/monetag';
 
 type GameMode = 'select' | 'merge' | 'mine';
@@ -86,15 +86,47 @@ function MergeGame({ onBack }: { onBack: () => void }) {
 }
 
 function TapToMine({ onBack }: { onBack: () => void }) {
-  const { height } = useWindowDimensions(); const compact = height < 780; const { profile } = useGame(); const [taps, setTaps] = useState(0); const [mined, setMined] = useState(0); const [power, setPower] = useState(1); const [level, setLevel] = useState(1);
-  const handleTap = () => { setTaps(v => v + 1); setMined(v => +(v + power).toFixed(2)); }; const upgrade = () => { if (mined >= level * 50) { setMined(v => +(v - level * 50).toFixed(2)); setPower(v => v + 1); setLevel(v => v + 1); } };
+  const { height } = useWindowDimensions();
+  const compact = height < 780;
+  const { profile, refreshProfile } = useGame();
+  const [taps, setTaps] = useState(0);
+  const [mined, setMined] = useState(0);
+  const [power, setPower] = useState(1);
+  const [level, setLevel] = useState(1);
+  const [crediting, setCrediting] = useState(false);
+
+  // Deliberately conservative starting rate. Upgrades improve the rate
+  // gradually instead of jumping by whole MG per tap.
+  const tapReward = Number((0.05 * Math.pow(1.12, power - 1)).toFixed(4));
+  const upgradeCost = Number((25 * Math.pow(2.1, level - 1)).toFixed(2));
+
+  const handleTap = () => {
+    setTaps(v => v + 1);
+    setMined(v => +(v + tapReward).toFixed(4));
+
+    // The wallet credit is authoritative and serialized in storage so rapid
+    // taps cannot overwrite one another. The UI remains responsive while the
+    // credit is persisted in the background.
+    setCrediting(true);
+    void creditMiningTokens(tapReward).then((updated) => {
+      if (updated) refreshProfile();
+    }).finally(() => setCrediting(false));
+  };
+
+  const upgrade = () => {
+    if (mined < upgradeCost) return;
+    setMined(v => +(v - upgradeCost).toFixed(4));
+    setPower(v => v + 1);
+    setLevel(v => v + 1);
+  };
+
   return <LinearGradient colors={['#062A1D', '#0A3B29', '#F4FFF8']} style={styles.container}><ScrollView contentContainerStyle={[styles.mineContent, compact && { paddingHorizontal: 12 }]} showsVerticalScrollIndicator={false}><AppHeader mode="mine" onBack={onBack} onRestart={() => { setTaps(0); setMined(0); setPower(1); setLevel(1); }} />
     <View style={styles.mineCard}><View style={styles.mineStats}><View><Text style={styles.mineStatLabel}>MG BALANCE</Text><Text style={styles.mineStatValue}>{Math.floor(profile?.totalTokens ?? 0).toLocaleString()}</Text></View><View><Text style={styles.mineStatLabel}>MINING LEVEL</Text><Text style={styles.mineStatValue}>Lv. {level}</Text></View><View><Text style={styles.mineStatLabel}>TOTAL TAPS</Text><Text style={styles.mineStatValue}>{taps.toLocaleString()}</Text></View></View>
       <Text style={styles.mineTitle}>Tap to Mine</Text><Text style={styles.mineSubtitle}>Tap the mine to earn MG points</Text>
-      <Pressable onPress={handleTap} style={({ pressed }) => [styles.mineButton, pressed && styles.mineButtonPressed]}><View style={styles.mineButtonGlow}><MaterialIcons name="touch-app" size={68} color="#FFFFFF" /><Text style={styles.mineTapText}>{mined.toFixed(0)}</Text><Text style={styles.mineTapLabel}>MG</Text></View></Pressable>
-      <View style={styles.miningPowerRow}><View style={{ flex: 1 }}><Text style={styles.powerTitle}>Mining Power</Text><View style={styles.powerTrack}><View style={[styles.powerFill, { width: `${Math.min(power, 100)}%` }]} /></View></View><Text style={styles.powerValue}>{power} MG/tap</Text></View>
-      <Pressable onPress={upgrade} style={styles.upgradeButton}><MaterialIcons name="arrow-upward" size={18} color="#FFFFFF" /><Text style={styles.upgradeText}>Upgrade Mine · {level * 50} MG</Text></Pressable>
-    </View><Text style={styles.upgradeHeading}>Upgrade Rewards</Text><View style={styles.upgradeGrid}><UpgradeCard icon="touch-app" title="Tap Power" value={`+${power + 1}`} level={`Lv.${level}`} /><UpgradeCard icon="autorenew" title="Auto Miner" value={`+${level}/s`} level={`Lv.${level + 1}`} /><UpgradeCard icon="monetization-on" title="Coin Boost" value={`+${Math.min(level * 5, 50)}%`} level={`Lv.${level + 2}`} /></View>
+      <Pressable onPress={handleTap} disabled={false} style={({ pressed }) => [styles.mineButton, pressed && styles.mineButtonPressed]}><View style={styles.mineButtonGlow}><MaterialIcons name="touch-app" size={68} color="#FFFFFF" /><Text style={styles.mineTapText}>{mined.toFixed(2)}</Text><Text style={styles.mineTapLabel}>{crediting ? 'SYNCING' : `${tapReward.toFixed(2)} MG / TAP`}</Text></View></Pressable>
+      <View style={styles.miningPowerRow}><View style={{ flex: 1 }}><Text style={styles.powerTitle}>Mining Power</Text><View style={styles.powerTrack}><View style={[styles.powerFill, { width: `${Math.min(power, 100)}%` }]} /></View></View><Text style={styles.powerValue}>{tapReward.toFixed(2)} MG/tap</Text></View>
+      <Pressable onPress={upgrade} disabled={mined < upgradeCost} style={[styles.upgradeButton, mined < upgradeCost && { opacity: 0.55 }]}><MaterialIcons name="arrow-upward" size={18} color="#FFFFFF" /><Text style={styles.upgradeText}>Upgrade Mine · {upgradeCost.toLocaleString()} MG</Text></Pressable>
+    </View><Text style={styles.upgradeHeading}>Upgrade Rewards</Text><View style={styles.upgradeGrid}><UpgradeCard icon="touch-app" title="Tap Power" value={`+${(tapReward * 0.12).toFixed(3)}`} level={`Lv.${level}`} /><UpgradeCard icon="autorenew" title="Auto Miner" value="Locked" level={`Lv.${level + 1}`} /><UpgradeCard icon="monetization-on" title="Coin Boost" value={`${Math.min(level * 2, 20)}%`} level={`Lv.${level + 2}`} /></View>
     <View style={styles.mineNotice}><MaterialIcons name="info-outline" size={18} color="#0A9F68" /><Text style={styles.mineNoticeText}>Your game account, referral code, profile and MG balance are shared across all MintGrow games.</Text></View>
   </ScrollView></LinearGradient>;
 }
