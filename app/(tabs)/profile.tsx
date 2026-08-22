@@ -32,26 +32,16 @@ export default function ProfileScreen() {
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
-
-        {/* Logo + Avatar */}
         <View style={styles.avatarSection}>
-          <Image
-            source={require('@/assets/images/logo.png')}
-            style={styles.logoImg}
-            contentFit="contain"
-            transition={200}
-          />
+          <Image source={require('@/assets/images/logo.png')} style={styles.logoImg} contentFit="contain" transition={200} />
           <Text style={styles.username}>{profile?.username ?? 'CryptoPlayer'}</Text>
           <Text style={styles.telegramId}>ID: {profile?.telegramId ?? '...'}</Text>
           <TokenBadge amount={profile?.totalTokens ?? 0} size="md" />
         </View>
 
-        {/* Level */}
         <View style={styles.levelCard}>
           <View style={styles.levelLeft}>
-            <View style={styles.levelCircle}>
-              <Text style={styles.levelNum}>{level}</Text>
-            </View>
+            <View style={styles.levelCircle}><Text style={styles.levelNum}>{level}</Text></View>
             <View>
               <Text style={styles.levelTitle}>{currentReward?.title ?? 'Legend'}</Text>
               <Text style={styles.levelSub}>Level {level} Achievement</Text>
@@ -60,14 +50,12 @@ export default function ProfileScreen() {
           <MaterialIcons name="chevron-right" size={20} color={Colors.textMuted} />
         </View>
 
-        {/* Referral Code */}
         <View style={styles.referralCard}>
           <Text style={styles.referralLabel}>Your Referral Code</Text>
           <Text style={styles.referralCode}>{profile?.referralCode || '...'}</Text>
           <Text style={styles.referralSub}>Share to earn +500 MG per friend!</Text>
         </View>
 
-        {/* Stats */}
         <View style={styles.statsGrid}>
           {stats.map(s => (
             <View key={s.label} style={styles.statCard}>
@@ -78,31 +66,37 @@ export default function ProfileScreen() {
           ))}
         </View>
 
-        {/* Wallet */}
+        <View style={styles.stakingCard}>
+          <View style={styles.stakingCopy}>
+            <Text style={styles.stakingKicker}>ON-CHAIN</Text>
+            <Text style={styles.stakingTitle}>MGS Staking</Text>
+            <Text style={styles.stakingBody}>Stake from 250,000 MGS with constrained delegation and sponsored transactions.</Text>
+          </View>
+          <Pressable style={styles.stakingBtn} onPress={() => router.push('/staking')}>
+            <Text style={styles.stakingBtnText}>Open Staking</Text>
+            <MaterialIcons name="arrow-forward" size={18} color={Colors.textOnGreen} />
+          </Pressable>
+        </View>
+
         <View style={styles.walletCard}>
           <View style={styles.walletRow}>
             <MaterialIcons name="account-balance-wallet" size={18} color={Colors.primary} />
             <Text style={styles.walletTitle}>BNB Chain Wallet (BEP-20)</Text>
           </View>
           {profile?.walletAddress ? (
-            <Text style={styles.walletAddr}>
-              {profile.walletAddress.slice(0, 12)}...{profile.walletAddress.slice(-8)}
-            </Text>
+            <Text style={styles.walletAddr}>{profile.walletAddress.slice(0, 12)}...{profile.walletAddress.slice(-8)}</Text>
           ) : (
             <Text style={styles.walletEmpty}>No wallet set — go to Rewards tab to add one</Text>
           )}
         </View>
 
-        {/* Token Info */}
         <View style={styles.tokenCard}>
           <Text style={styles.tokenTitle}>About MintGrow (MG)</Text>
           <Text style={styles.tokenBody}>
             MG is a utility token on BNB Chain (BEP-20). Earn by merging coins, completing daily streaks, and referring friends.
             Min withdrawal: {WITHDRAWAL_MIN.toLocaleString()} MG. Token powers governance, NFT mints, DAO membership, and DeFi yields.
           </Text>
-          <View style={styles.networkTag}>
-            <Text style={styles.networkTagText}>{TOKEN_NETWORK}</Text>
-          </View>
+          <View style={styles.networkTag}><Text style={styles.networkTagText}>{TOKEN_NETWORK}</Text></View>
         </View>
 
         <Pressable style={styles.adminBtn} onPress={handleAdminAccess}>
@@ -119,70 +113,43 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
   scroll: { padding: Spacing.md, paddingBottom: 40, alignItems: 'center' },
-
   avatarSection: { alignItems: 'center', marginBottom: Spacing.lg, gap: Spacing.sm },
   logoImg: { width: 72, height: 72, borderRadius: 16 },
   username: { ...Typography.h2, color: Colors.textPrimary },
   telegramId: { ...Typography.small, color: Colors.textMuted },
-
-  levelCard: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: Colors.bgCard, borderRadius: Radius.lg, padding: Spacing.md,
-    width: '100%', borderWidth: 2, borderColor: Colors.primary, marginBottom: Spacing.md,
-  },
+  levelCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: Colors.bgCard, borderRadius: Radius.lg, padding: Spacing.md, width: '100%', borderWidth: 2, borderColor: Colors.primary, marginBottom: Spacing.md },
   levelLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
-  levelCircle: {
-    width: 48, height: 48, borderRadius: 24, backgroundColor: Colors.primary,
-    alignItems: 'center', justifyContent: 'center',
-  },
+  levelCircle: { width: 48, height: 48, borderRadius: 24, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center' },
   levelNum: { fontSize: 22, fontWeight: '800', color: '#fff' },
   levelTitle: { ...Typography.bodyBold, color: Colors.textPrimary },
   levelSub: { ...Typography.caption, color: Colors.textMuted },
-
-  referralCard: {
-    backgroundColor: Colors.primaryGlow, borderRadius: Radius.lg, padding: Spacing.md,
-    width: '100%', marginBottom: Spacing.md, borderWidth: 1, borderColor: Colors.primary,
-    alignItems: 'center', gap: 4,
-  },
+  referralCard: { backgroundColor: Colors.primaryGlow, borderRadius: Radius.lg, padding: Spacing.md, width: '100%', marginBottom: Spacing.md, borderWidth: 1, borderColor: Colors.primary, alignItems: 'center', gap: 4 },
   referralLabel: { ...Typography.caption, color: Colors.primary, letterSpacing: 1, textTransform: 'uppercase' },
   referralCode: { fontSize: 22, fontWeight: '900', color: Colors.primary, letterSpacing: 3 },
   referralSub: { ...Typography.small, color: Colors.primaryDark },
-
   statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, width: '100%', marginBottom: Spacing.md },
-  statCard: {
-    flex: 1, minWidth: '45%', backgroundColor: Colors.bgCard, borderRadius: Radius.md,
-    padding: Spacing.md, alignItems: 'center', borderWidth: 1, borderColor: Colors.border,
-  },
+  statCard: { flex: 1, minWidth: '45%', backgroundColor: Colors.bgCard, borderRadius: Radius.md, padding: Spacing.md, alignItems: 'center', borderWidth: 1, borderColor: Colors.border },
   statIcon: { marginBottom: 4 },
   statVal: { ...Typography.h3, color: Colors.textPrimary },
   statLbl: { ...Typography.caption, color: Colors.textMuted, textAlign: 'center' },
-
-  walletCard: {
-    backgroundColor: Colors.bgCard, borderRadius: Radius.md, padding: Spacing.md,
-    width: '100%', marginBottom: Spacing.md, borderWidth: 1, borderColor: Colors.border, gap: Spacing.xs,
-  },
+  stakingCard: { backgroundColor: Colors.primary, borderRadius: Radius.lg, padding: Spacing.md, width: '100%', marginBottom: Spacing.md },
+  stakingCopy: { marginBottom: Spacing.md },
+  stakingKicker: { ...Typography.caption, color: Colors.textOnGreen, letterSpacing: 1.5 },
+  stakingTitle: { ...Typography.h3, color: Colors.textOnGreen, marginTop: 2 },
+  stakingBody: { ...Typography.small, color: 'rgba(255,255,255,0.84)', lineHeight: 19, marginTop: 4 },
+  stakingBtn: { minHeight: 46, backgroundColor: '#FFFFFF', borderRadius: Radius.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  stakingBtnText: { ...Typography.bodyBold, color: Colors.primary },
+  walletCard: { backgroundColor: Colors.bgCard, borderRadius: Radius.md, padding: Spacing.md, width: '100%', marginBottom: Spacing.md, borderWidth: 1, borderColor: Colors.border, gap: Spacing.xs },
   walletRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   walletTitle: { ...Typography.bodyBold, color: Colors.textPrimary },
   walletAddr: { ...Typography.small, color: Colors.primary, fontFamily: 'monospace' },
   walletEmpty: { ...Typography.small, color: Colors.textMuted },
-
-  tokenCard: {
-    backgroundColor: Colors.bgCard, borderRadius: Radius.md, padding: Spacing.md,
-    width: '100%', marginBottom: Spacing.md, borderWidth: 1, borderColor: Colors.border, gap: 8,
-  },
+  tokenCard: { backgroundColor: Colors.bgCard, borderRadius: Radius.md, padding: Spacing.md, width: '100%', marginBottom: Spacing.md, borderWidth: 1, borderColor: Colors.border, gap: 8 },
   tokenTitle: { ...Typography.bodyBold, color: Colors.primary },
   tokenBody: { ...Typography.small, color: Colors.textSecondary, lineHeight: 20 },
-  networkTag: {
-    backgroundColor: Colors.primaryGlow, borderRadius: Radius.full, paddingVertical: 4,
-    paddingHorizontal: 12, alignSelf: 'flex-start', borderWidth: 1, borderColor: Colors.primary,
-  },
+  networkTag: { backgroundColor: Colors.primaryGlow, borderRadius: Radius.full, paddingVertical: 4, paddingHorizontal: 12, alignSelf: 'flex-start', borderWidth: 1, borderColor: Colors.primary },
   networkTagText: { ...Typography.caption, color: Colors.primary, fontWeight: '700' },
-
-  adminBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingVertical: Spacing.sm, paddingHorizontal: Spacing.md,
-    borderRadius: Radius.full, borderWidth: 1, borderColor: Colors.border, marginBottom: Spacing.sm,
-  },
+  adminBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: Spacing.sm, paddingHorizontal: Spacing.md, borderRadius: Radius.full, borderWidth: 1, borderColor: Colors.border, marginBottom: Spacing.sm },
   adminBtnText: { ...Typography.small, color: Colors.textMuted },
   footer: { ...Typography.caption, color: Colors.textMuted, textAlign: 'center', marginTop: Spacing.sm },
 });
