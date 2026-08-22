@@ -6,6 +6,10 @@ const KEYS = { PROFILE: 'mintgrow_profile_v4', DAILY_BONUS: 'mintgrow_daily_bonu
 
 let tokenCreditQueue: Promise<unknown> = Promise.resolve();
 let miningCreditQueue: Promise<unknown> = Promise.resolve();
+let pendingMiningAmount = 0;
+let pendingMiningTimer: ReturnType<typeof setTimeout> | null = null;
+const MINING_SYNC_THRESHOLD = 10;
+const MINING_SYNC_INTERVAL_MS = 10000;
 
 export const generateReferralCode = (telegramId: string): string => {
   const base = telegramId.replace(/\D/g, '').slice(-4) || '0000';
@@ -90,15 +94,9 @@ export const updateProfileTokens = async (tokens: number, score: number): Promis
     if (!current) return null;
 
     try {
-      const level = Math.max(
-        current.level || 1,
-        (await import('@/services/gameEngine')).getLevelFromScore(score),
-      );
+      const level = Math.max(current.level || 1, (await import('@/services/gameEngine')).getLevelFromScore(score));
       const row = await verifiedApi<any>('credit_player_tokens', {
-        telegramId: current.telegramId,
-        amount: tokens,
-        bestScore: score,
-        level,
+        telegramId: current.telegramId, amount: tokens, bestScore: score, level,
       });
       const p = mapRowToProfile(row);
       await cacheProfile(p);
@@ -114,35 +112,67 @@ export const updateProfileTokens = async (tokens: number, score: number): Promis
   return result;
 };
 
-// Mining credits use the same authoritative server-side wallet operation as
-// merge rewards, but preserve the player's existing score/level metadata.
-// Requests are serialized so rapid taps cannot overwrite a newer balance.
+// Tap-to-Mine is intentionally batched. Taps update the local cached balance
+// immediately, while the authoritative wallet is credited only when the
+// pending amount reaches the threshold or the time window expires. This keeps
+// the UI responsive without creating one database write per tap.
 export const creditMiningTokens = async (amount: number): Promise<PlayerProfile | null> => {
   if (!Number.isFinite(amount) || amount <= 0) return getProfile();
 
-  const operation = async (): Promise<PlayerProfile | null> => {
-    const current = await getProfile();
-    if (!current) return null;
+  const current = await getProfile();
+  if (!current) return null;
 
-    try {
-      const row = await verifiedApi<any>('credit_player_tokens', {
-        telegramId: current.telegramId,
-        amount,
-        bestScore: Number(current.bestScore ?? 0),
-        level: Math.max(1, Number(current.level ?? 1)),
-      });
-      const p = mapRowToProfile(row);
-      await cacheProfile(p);
-      return p;
-    } catch (error) {
-      console.warn('Mining token credit failed:', error instanceof Error ? error.message : error);
-      return null;
+  const optimistic: PlayerProfile = {
+    ...current,
+    totalTokens: Number((current.totalTokens + amount).toFixed(4)),
+  };
+  await cacheProfile(optimistic);
+  pendingMiningAmount = Number((pendingMiningAmount + amount).toFixed(4));
+
+  const flushMiningBatch = async (): Promise<PlayerProfile | null> => {
+    if (pendingMiningAmount <= 0) return getProfile();
+    const batchAmount = pendingMiningAmount;
+    pendingMiningAmount = 0;
+    if (pendingMiningTimer) {
+      clearTimeout(pendingMiningTimer);
+      pendingMiningTimer = null;
     }
+
+    const operation = async (): Promise<PlayerProfile | null> => {
+      const profile = await getProfile();
+      if (!profile) return null;
+      try {
+        const row = await verifiedApi<any>('credit_player_tokens', {
+          telegramId: profile.telegramId,
+          amount: batchAmount,
+          bestScore: Number(profile.bestScore ?? 0),
+          level: Math.max(1, Number(profile.level ?? 1)),
+        });
+        const serverProfile = mapRowToProfile(row);
+        await cacheProfile(serverProfile);
+        return serverProfile;
+      } catch (error) {
+        console.warn('Mining batch credit failed:', error instanceof Error ? error.message : error);
+        return getProfile();
+      }
+    };
+
+    const result = miningCreditQueue.then(operation, operation);
+    miningCreditQueue = result.catch(() => undefined);
+    return result;
   };
 
-  const result = miningCreditQueue.then(operation, operation);
-  miningCreditQueue = result.catch(() => undefined);
-  return result;
+  if (pendingMiningAmount >= MINING_SYNC_THRESHOLD) {
+    return flushMiningBatch();
+  }
+
+  if (!pendingMiningTimer) {
+    pendingMiningTimer = setTimeout(() => {
+      void flushMiningBatch();
+    }, MINING_SYNC_INTERVAL_MS);
+  }
+
+  return optimistic;
 };
 
 export const incrementAdsWatched = async (): Promise<void> => {};
@@ -151,7 +181,7 @@ export const addPowerUp = async (type: PowerUpType): Promise<PlayerProfile | nul
   const current = await getProfile();
   if (!current) return null;
   try {
-    const clientEventId = `powerup_${current.telegramId}_${type}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const clientEventId = `powerup_${current.telegramId}_${type}_${Date.now()}_${Math.random().toString(36).slice(0, 8)}`;
     const row = await verifiedApi<any>('grant_powerup', { telegramId: current.telegramId, type, clientEventId });
     const p = mapRowToProfile(row);
     await cacheProfile(p);
