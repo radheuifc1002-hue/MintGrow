@@ -16,7 +16,7 @@ async function verifyTelegramInitData(initData: string, botToken: string) {
   if (!Number.isSafeInteger(user.id) || user.id! <= 0) throw new Error('telegram_user_missing');
   return user;
 }
-const ACTIONS = new Set(['get_player','ensure_player','ensure_referral_code','complete_registration','update_profile_metadata','credit_player_tokens','record_ad_event','record_game_session','start_game_session','settle_game_session','apply_referral_code','submit_withdrawal_request','get_referrals','get_withdrawals','get_leaderboard','get_player_rank','claim_daily_bonus','spend_tokens_for_powerup','grant_powerup','consume_powerup']);
+const ACTIONS = new Set(['get_player','ensure_player','ensure_referral_code','complete_registration','update_profile_metadata','record_ad_event','start_game_session','settle_game_session','apply_referral_code','submit_withdrawal_request','get_referrals','get_withdrawals','get_leaderboard','get_player_rank','claim_daily_bonus','spend_tokens_for_powerup','grant_powerup','consume_powerup']);
 
 Deno.serve(async (req) => {
   let stage = 'request'; let action = 'unknown';
@@ -37,10 +37,8 @@ Deno.serve(async (req) => {
       case 'ensure_player': rpc='ensure_player'; args={ p_telegram_id:telegramId,p_username:p.username ?? telegramUser.username ?? telegramUser.first_name ?? `User${telegramId}`,p_avatar_url:p.avatarUrl ?? telegramUser.photo_url ?? null }; break;
       case 'ensure_referral_code': args={p_telegram_id:telegramId}; break;
       case 'complete_registration': { const registrationUsername=p.username ?? telegramUser.username ?? telegramUser.first_name ?? `User${telegramId}`; const { error: ensureError }=await db.rpc('ensure_player',{p_telegram_id:telegramId,p_username:registrationUsername,p_avatar_url:p.avatarUrl ?? telegramUser.photo_url ?? null}); if(ensureError)return json({error:ensureError.message},400); rpc='complete_player_registration'; args={p_telegram_id:telegramId,p_username:registrationUsername}; break; }
-      case 'update_profile_metadata': rpc='update_player_metadata'; args={p_telegram_id:telegramId,p_username:p.username ?? null,p_avatar_url:p.avatarUrl ?? null,p_wallet_address:p.walletAddress ?? null,p_best_score:p.bestScore ?? null,p_level:p.level ?? null,p_last_login_date:p.lastLoginDate ?? null,p_login_streak:p.loginStreak ?? null,p_power_ups:null}; break;
-      case 'credit_player_tokens': args={p_telegram_id:telegramId,p_amount:p.amount,p_best_score:p.bestScore ?? null,p_level:p.level ?? null}; break;
+      case 'update_profile_metadata': rpc='update_player_metadata'; args={p_telegram_id:telegramId,p_username:p.username ?? null,p_avatar_url:p.avatarUrl ?? null,p_wallet_address:p.walletAddress ?? null}; break;
       case 'record_ad_event': args={p_telegram_id:telegramId,p_client_event_id:p.clientEventId,p_placement:p.placement,p_watched:p.watched,p_reward_tokens:p.rewardTokens ?? 0,p_error:p.error ?? null}; break;
-      case 'record_game_session': args={p_telegram_id:telegramId,p_client_session_id:p.clientSessionId,p_score:p.score,p_moves:p.moves,p_level:p.level,p_tokens_earned:p.tokensEarned,p_max_tile:p.maxTile ?? 2,p_board:p.board ?? null,p_started_at:p.startedAt ?? new Date().toISOString(),p_ended_at:new Date().toISOString()}; break;
       case 'start_game_session': args={p_telegram_id:telegramId,p_client_session_id:String(p.clientSessionId ?? '')}; break;
       case 'settle_game_session': args={p_telegram_id:telegramId,p_client_session_id:String(p.clientSessionId ?? ''),p_score:Number(p.score ?? 0),p_moves:Number(p.moves ?? 0),p_level:Number(p.level ?? 1),p_max_tile:Number(p.maxTile ?? 2),p_board:p.board ?? null}; break;
       case 'apply_referral_code': args={p_referee_telegram_id:telegramId,p_code:String(p.code ?? '').trim().toUpperCase()}; break;
