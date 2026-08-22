@@ -8,7 +8,7 @@
  *   SUPABASE_SERVICE_ROLE_KEY
  *   MINI_APP_URL - the HTTPS URL of the deployed Expo web Mini App
  * Optional:
- *   BOT_USERNAME - used for referral links (default: MintGrowBot)
+ *   BOT_USERNAME - used for referral links (default: MINTGROW_BOT)
  *   PORT - set by Railway automatically
  */
 
@@ -19,7 +19,7 @@ const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const MINI_APP_URL = process.env.MINI_APP_URL || '';
-const BOT_USERNAME = process.env.BOT_USERNAME || 'MintGrowBot';
+const BOT_USERNAME = 'MINTGROW_BOT';
 const PORT = Number(process.env.PORT || 3000);
 
 const supabase = SUPABASE_URL && SUPABASE_SERVICE_KEY
@@ -53,7 +53,6 @@ function requireConfig() {
 
 async function telegram(method, payload) {
   if (!BOT_TOKEN) throw new Error('TELEGRAM_BOT_TOKEN is not configured');
-
   const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/${method}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -86,13 +85,11 @@ function generateReferralCode(telegramId) {
 
 async function getPlayer(telegramId) {
   if (!supabase) throw new Error('Supabase is not configured');
-
   const { data, error } = await supabase
     .from('players')
     .select('*')
     .eq('telegram_id', String(telegramId))
     .maybeSingle();
-
   if (error) console.error('Supabase getPlayer error:', error);
   return data;
 }
@@ -101,6 +98,10 @@ function miniAppKeyboard(label = '🎮 Play MintGrow') {
   return {
     inline_keyboard: [[{ text: label, web_app: { url: MINI_APP_URL } }]],
   };
+}
+
+function referralLink(code) {
+  return `https://${BOT_USERNAME}.t.me/?start=${encodeURIComponent(code)}`;
 }
 
 async function handleCallback(callbackQuery) {
@@ -123,7 +124,7 @@ async function handleCallback(callbackQuery) {
       const refEarnings = Number.parseFloat(player.referral_tokens_earned ?? '0');
       await sendMessage(
         chatId,
-        `👥 <b>Referral Stats</b>\n\nDirect refs: <b>${directRefs}</b>\nEarnings: <b>${refEarnings.toLocaleString()} MG</b>\n\nYour code: <code>${code}</code>\n\nShare: https://t.me/${BOT_USERNAME}?start=${code}`
+        `👥 <b>Referral Stats</b>\n\nDirect refs: <b>${directRefs}</b>\nEarnings: <b>${refEarnings.toLocaleString()} MG</b>\n\nYour code: <code>${code}</code>\n\nShare: ${referralLink(code)}`
       );
     }
   }
@@ -184,8 +185,8 @@ async function handleMessage(message) {
 
     const playerCode = player.referral_code || generateReferralCode(telegramId);
     const welcomeMsg = player.referred_by
-      ? `🎉 <b>Welcome to MintGrow, @${username}!</b>\n\nYou joined via referral and got <b>100 MG bonus!</b>\n\n💎 Merge crypto coins, earn MG tokens on BNB Chain!`
-      : `👋 <b>Welcome to MintGrow!</b>\n\nMerge crypto coins → earn real <b>MG tokens</b> on BNB Chain!\n\n🔑 Your code: <code>${playerCode}</code>\nShare for 500 MG per friend!`;
+      ? `🎉 <b>Welcome to MintGrow, @${username}!</b>\n\nYou joined via referral and got <b>100 MG bonus!</b>\n\n💎 Merge crypto coins, earn real <b>MG points</b> in MintGrow!`
+      : `👋 <b>Welcome to MintGrow!</b>\n\nMerge crypto coins → earn <b>MG points</b>!\n\n🔑 Your code: <code>${playerCode}</code>\nShare for 500 MG per friend!`;
 
     await sendMessage(chatId, welcomeMsg, {
       reply_markup: {
@@ -227,7 +228,7 @@ async function handleMessage(message) {
     const code = player.referral_code;
     await sendMessage(
       chatId,
-      `👥 <b>Referrals</b>\n\nCode: <code>${code}</code>\nDirect: <b>${player.direct_referral_count ?? 0}</b>\nEarnings: <b>${Number.parseFloat(player.referral_tokens_earned ?? '0').toLocaleString()} MG</b>\n\nLink: https://t.me/${BOT_USERNAME}?start=${code}`
+      `👥 <b>Referrals</b>\n\nCode: <code>${code}</code>\nDirect: <b>${player.direct_referral_count ?? 0}</b>\nEarnings: <b>${Number.parseFloat(player.referral_tokens_earned ?? '0').toLocaleString()} MG</b>\n\nLink: ${referralLink(code)}`
     );
     return;
   }
@@ -243,17 +244,14 @@ async function handleMessage(message) {
 
 async function handleWebhook(req, res) {
   json(res, 200, { ok: true });
-
   try {
     const update = await readJson(req);
     console.log('TELEGRAM WEBHOOK RECEIVED:', JSON.stringify(update));
-
     const callbackQuery = update.callback_query;
     if (callbackQuery) {
       await handleCallback(callbackQuery);
       return;
     }
-
     const message = update.message || update.edited_message;
     if (message) await handleMessage(message);
   } catch (err) {
@@ -263,9 +261,7 @@ async function handleWebhook(req, res) {
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
-
   if (req.method === 'OPTIONS') return json(res, 200, { ok: true });
-
   if (req.method === 'GET' && url.pathname === '/') {
     return json(res, 200, {
       status: 'ok',
@@ -274,7 +270,6 @@ const server = http.createServer(async (req, res) => {
       missingEnv: requireConfig(),
     });
   }
-
   if (req.method === 'GET' && url.pathname === '/health') {
     const missingEnv = requireConfig();
     return json(res, missingEnv.length ? 500 : 200, {
@@ -282,11 +277,9 @@ const server = http.createServer(async (req, res) => {
       missingEnv,
     });
   }
-
   if (req.method === 'GET' && url.pathname === '/setup-webhook') {
     const missingEnv = requireConfig().filter(name => name !== 'MINI_APP_URL');
     if (missingEnv.length) return json(res, 500, { ok: false, missingEnv });
-
     const webhookUrl = `https://${req.headers.host}/webhook`;
     const telegramResponse = await telegram('setWebhook', {
       url: webhookUrl,
@@ -295,11 +288,9 @@ const server = http.createServer(async (req, res) => {
     });
     return json(res, 200, { webhookUrl, telegramResponse });
   }
-
   if (req.method === 'POST' && url.pathname === '/webhook') {
     return handleWebhook(req, res);
   }
-
   return json(res, 404, { error: 'Not found' });
 });
 
