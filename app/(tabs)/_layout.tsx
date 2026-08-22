@@ -6,27 +6,25 @@ import { Colors } from '@/constants/theme';
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
-  const bottomInset = Platform.select({ ios: insets.bottom, android: insets.bottom, default: 0 }) || 0;
+
+  const tabBarStyle = {
+    height: Platform.select({ ios: insets.bottom + 58, android: insets.bottom + 58, default: 66 }),
+    paddingTop: 6,
+    paddingBottom: Platform.select({ ios: insets.bottom + 6, android: insets.bottom + 6, default: 6 }),
+    paddingHorizontal: 4,
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1.5,
+    borderTopColor: Colors.border,
+  };
 
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarStyle: {
-          height: bottomInset + 62,
-          paddingTop: 5,
-          paddingBottom: bottomInset + 4,
-          paddingHorizontal: 5,
-          backgroundColor: '#FFFFFF',
-          borderTopWidth: 1,
-          borderTopColor: Colors.border,
-          elevation: 12,
-        },
-        tabBarItemStyle: { borderRadius: 16, marginHorizontal: 2, marginVertical: 3 },
-        tabBarActiveBackgroundColor: '#E5FFF0',
+        tabBarStyle,
         tabBarActiveTintColor: Colors.primary,
         tabBarInactiveTintColor: Colors.textMuted,
-        tabBarLabelStyle: { fontSize: 10, fontWeight: '700', marginTop: -1 },
+        tabBarLabelStyle: { fontSize: 10, fontWeight: '600' },
       }}
     >
       <Tabs.Screen name="index" options={{ title: 'Play', tabBarIcon: ({ color, size }) => <MaterialIcons name="games" size={size} color={color} /> }} />

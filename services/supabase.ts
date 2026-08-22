@@ -2,9 +2,6 @@ import { createClient } from '@supabase/supabase-js';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!;
-const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
-
 const createStorageAdapter = () => {
   if (Platform.OS === 'web') {
     return {
@@ -35,7 +32,12 @@ let _supabase: ReturnType<typeof createClient> | null = null;
 
 export const getSupabaseClient = () => {
   if (!_supabase) {
-    _supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    const url = process.env.EXPO_PUBLIC_SUPABASE_URL;
+    const key = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+    if (!url || !key) {
+      throw new Error('Supabase environment variables are not configured. Check EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY.');
+    }
+    _supabase = createClient(url, key, {
       auth: {
         storage: createStorageAdapter() as any,
         autoRefreshToken: true,
@@ -47,4 +49,9 @@ export const getSupabaseClient = () => {
   return _supabase;
 };
 
-export const supabase = getSupabaseClient();
+// Lazy accessor — do not initialise at module load time to avoid SSR crashes
+export const supabase = new Proxy({} as ReturnType<typeof createClient>, {
+  get(_target, prop) {
+    return (getSupabaseClient() as any)[prop];
+  },
+});
