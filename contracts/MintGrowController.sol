@@ -6,7 +6,6 @@ import {AccessControlDefaultAdminRules} from "@openzeppelin/contracts/access/ext
 contract MintGrowController is AccessControlDefaultAdminRules {
     bytes32 public constant POLICY_ROLE = keccak256("POLICY_ROLE");
     bytes32 public constant STAKING_MINTER_ROLE = keccak256("STAKING_MINTER_ROLE");
-
     uint256 public constant BPS = 10_000;
     uint256 public constant YEAR = 365 days;
 
@@ -29,14 +28,9 @@ contract MintGrowController is AccessControlDefaultAdminRules {
     event ActiveUpdated(bool active);
     event EmissionConsumed(uint256 amount, uint256 epochTotal);
 
-    constructor(
-        address admin,
-        uint48 adminDelay,
-        uint256 minRoiBps_,
-        uint256 maxRoiBps_,
-        uint256 initialRoiBps_,
-        uint256 epochEmissionLimit_
-    ) AccessControlDefaultAdminRules(adminDelay, admin) {
+    constructor(address admin, uint48 adminDelay, uint256 minRoiBps_, uint256 maxRoiBps_, uint256 initialRoiBps_, uint256 epochEmissionLimit_)
+        AccessControlDefaultAdminRules(adminDelay, admin)
+    {
         if (admin == address(0) || minRoiBps_ > maxRoiBps_) revert InvalidRange();
         if (initialRoiBps_ < minRoiBps_ || initialRoiBps_ > maxRoiBps_) revert RoiOutOfRange();
         minRoiBps = minRoiBps_;
@@ -77,7 +71,7 @@ contract MintGrowController is AccessControlDefaultAdminRules {
             epochStart = block.timestamp;
             emittedThisEpoch = 0;
         }
-        if (amount > epochEmissionLimit - emittedThisEpoch) revert EmissionLimitExceeded();
+        if (emittedThisEpoch > epochEmissionLimit || amount > epochEmissionLimit - emittedThisEpoch) revert EmissionLimitExceeded();
         emittedThisEpoch += amount;
         emit EmissionConsumed(amount, emittedThisEpoch);
     }
