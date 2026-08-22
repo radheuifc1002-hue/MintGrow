@@ -1,314 +1,42 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PlayerProfile, WithdrawalRequest, PowerUpType, DEFAULT_POWER_UPS, ReferralEntry } from '@/types/game';
 import { verifiedApi } from '@/services/verifiedApi';
-
-const KEYS = { PROFILE: 'mintgrow_profile_v4', DAILY_BONUS: 'mintgrow_daily_bonus_v2', SAVED_BOARD: 'mintgrow_saved_board' };
-
-let tokenCreditQueue: Promise<unknown> = Promise.resolve();
-let miningCreditQueue: Promise<unknown> = Promise.resolve();
-let pendingMiningAmount = 0;
-let pendingMiningTimer: ReturnType<typeof setTimeout> | null = null;
-const MINING_SYNC_THRESHOLD = 10;
-const MINING_SYNC_INTERVAL_MS = 10000;
-
-export const generateReferralCode = (telegramId: string): string => {
-  const base = telegramId.replace(/\D/g, '').slice(-4) || '0000';
-  const suffix = Math.random().toString(36).substring(2, 5).toUpperCase();
-  return `MG${base}${suffix}`;
-};
-
-export const createDefaultProfile = (telegramId: string, username: string): PlayerProfile => ({
-  telegramId, username, referralCode: '', referredBy: undefined, referralCount: 0,
-  referralTokensEarned: 0, totalTokens: 0, pendingTokens: 0, withdrawnTokens: 0,
-  walletAddress: '', level: 1, gamesPlayed: 0, bestScore: 0, adsWatched: 0,
-  lastLoginDate: undefined, loginStreak: 0, powerUps: { ...DEFAULT_POWER_UPS }, isRegistered: false,
-});
-
-const mapRowToProfile = (row: any): PlayerProfile => ({
-  telegramId: String(row.telegram_id), username: row.username ?? 'CryptoPlayer',
-  referralCode: row.referral_code ?? '', referredBy: row.referred_by ?? undefined,
-  referralCount: Number(row.direct_referral_count ?? 0),
-  referralTokensEarned: Number(row.referral_tokens_earned ?? 0),
-  totalTokens: Number(row.total_tokens ?? 0), pendingTokens: Number(row.pending_tokens ?? 0),
-  withdrawnTokens: Number(row.withdrawn_tokens ?? 0), walletAddress: row.wallet_address ?? '',
-  level: Number(row.level ?? 1), gamesPlayed: Number(row.games_played ?? 0),
-  bestScore: Number(row.best_score ?? 0), adsWatched: Number(row.ads_watched ?? 0),
-  lastLoginDate: row.last_login_date ?? undefined, loginStreak: Number(row.login_streak ?? 0),
-  powerUps: row.power_ups ?? { ...DEFAULT_POWER_UPS }, isRegistered: Boolean(row.is_registered),
-});
-
-const cacheProfile = async (profile: PlayerProfile) => {
-  await AsyncStorage.setItem(KEYS.PROFILE, JSON.stringify(profile));
-};
-
-export const getProfile = async (): Promise<PlayerProfile | null> => {
-  try {
-    const raw = await AsyncStorage.getItem(KEYS.PROFILE);
-    if (!raw) return null;
-    const p = JSON.parse(raw) as PlayerProfile;
-    if (!p.powerUps) p.powerUps = { ...DEFAULT_POWER_UPS };
-    return p;
-  } catch {
-    return null;
-  }
-};
-
-export const syncProfileFromSupabase = async (telegramId: string): Promise<PlayerProfile | null> => {
-  try {
-    const row = await verifiedApi<any>('get_player', { telegramId });
-    if (!row) return null;
-    const p = mapRowToProfile(row);
-    await cacheProfile(p);
-    return p;
-  } catch {
-    return null;
-  }
-};
-
-export const saveProfile = async (profile: PlayerProfile): Promise<void> => {
-  await cacheProfile(profile);
-  try {
-    const row = await verifiedApi<any>('update_profile_metadata', {
-      telegramId: profile.telegramId, username: profile.username, avatarUrl: profile.avatarUrl,
-      walletAddress: profile.walletAddress, bestScore: profile.bestScore, level: profile.level,
-      lastLoginDate: profile.lastLoginDate, loginStreak: profile.loginStreak,
-    });
-    if (row) await cacheProfile(mapRowToProfile(row));
-  } catch (error) {
-    console.warn('Profile metadata sync failed:', error instanceof Error ? error.message : error);
-  }
-};
-
-export const initOrLoadProfile = async (telegramId: string, username: string, avatarUrl?: string): Promise<PlayerProfile> => {
-  const row = await verifiedApi<any>('ensure_player', { telegramId, username, avatarUrl });
-  const p = mapRowToProfile(row);
-  await cacheProfile(p);
-  return p;
-};
-
-export const updateProfileTokens = async (tokens: number, score: number): Promise<PlayerProfile | null> => {
-  if (!Number.isFinite(tokens) || tokens <= 0) return getProfile();
-
-  const operation = async (): Promise<PlayerProfile | null> => {
-    const current = await getProfile();
-    if (!current) return null;
-
-    try {
-      const level = Math.max(current.level || 1, (await import('@/services/gameEngine')).getLevelFromScore(score));
-      const row = await verifiedApi<any>('credit_player_tokens', {
-        telegramId: current.telegramId, amount: tokens, bestScore: score, level,
-      });
-      const p = mapRowToProfile(row);
-      await cacheProfile(p);
-      return p;
-    } catch (error) {
-      console.warn('Token credit failed:', error instanceof Error ? error.message : error);
-      return null;
-    }
-  };
-
-  const result = tokenCreditQueue.then(operation, operation);
-  tokenCreditQueue = result.catch(() => undefined);
-  return result;
-};
-
-// Tap-to-Mine is intentionally batched. Taps update the local cached balance
-// immediately, while the authoritative wallet is credited only when the
-// pending amount reaches the threshold or the time window expires. This keeps
-// the UI responsive without creating one database write per tap.
-export const creditMiningTokens = async (amount: number): Promise<PlayerProfile | null> => {
-  if (!Number.isFinite(amount) || amount <= 0) return getProfile();
-
-  const current = await getProfile();
-  if (!current) return null;
-
-  const optimistic: PlayerProfile = {
-    ...current,
-    totalTokens: Number((current.totalTokens + amount).toFixed(4)),
-  };
-  await cacheProfile(optimistic);
-  pendingMiningAmount = Number((pendingMiningAmount + amount).toFixed(4));
-
-  const flushMiningBatch = async (): Promise<PlayerProfile | null> => {
-    if (pendingMiningAmount <= 0) return getProfile();
-    const batchAmount = pendingMiningAmount;
-    pendingMiningAmount = 0;
-    if (pendingMiningTimer) {
-      clearTimeout(pendingMiningTimer);
-      pendingMiningTimer = null;
-    }
-
-    const operation = async (): Promise<PlayerProfile | null> => {
-      const profile = await getProfile();
-      if (!profile) return null;
-      try {
-        const row = await verifiedApi<any>('credit_player_tokens', {
-          telegramId: profile.telegramId,
-          amount: batchAmount,
-          bestScore: Number(profile.bestScore ?? 0),
-          level: Math.max(1, Number(profile.level ?? 1)),
-        });
-        const serverProfile = mapRowToProfile(row);
-        await cacheProfile(serverProfile);
-        return serverProfile;
-      } catch (error) {
-        console.warn('Mining batch credit failed:', error instanceof Error ? error.message : error);
-        return getProfile();
-      }
-    };
-
-    const result = miningCreditQueue.then(operation, operation);
-    miningCreditQueue = result.catch(() => undefined);
-    return result;
-  };
-
-  if (pendingMiningAmount >= MINING_SYNC_THRESHOLD) {
-    return flushMiningBatch();
-  }
-
-  if (!pendingMiningTimer) {
-    pendingMiningTimer = setTimeout(() => {
-      void flushMiningBatch();
-    }, MINING_SYNC_INTERVAL_MS);
-  }
-
-  return optimistic;
-};
-
-export const incrementAdsWatched = async (): Promise<void> => {};
-
-export const addPowerUp = async (type: PowerUpType): Promise<PlayerProfile | null> => {
-  const current = await getProfile();
-  if (!current) return null;
-  try {
-    const clientEventId = `powerup_${current.telegramId}_${type}_${Date.now()}_${Math.random().toString(36).slice(0, 8)}`;
-    const row = await verifiedApi<any>('grant_powerup', { telegramId: current.telegramId, type, clientEventId });
-    const p = mapRowToProfile(row);
-    await cacheProfile(p);
-    return p;
-  } catch { return null; }
-};
-
-export const usePowerUp = async (type: PowerUpType): Promise<PlayerProfile | null> => {
-  const current = await getProfile();
-  if (!current) return null;
-  try {
-    const row = await verifiedApi<any>('consume_powerup', { telegramId: current.telegramId, type });
-    const p = mapRowToProfile(row);
-    await cacheProfile(p);
-    return p;
-  } catch { return null; }
-};
-
-export const spendTokensForPowerUp = async (type: PowerUpType, cost: number): Promise<PlayerProfile | null> => {
-  const current = await getProfile();
-  if (!current) return null;
-  try {
-    const row = await verifiedApi<any>('spend_tokens_for_powerup', { telegramId: current.telegramId, type, cost });
-    const p = mapRowToProfile(row);
-    await cacheProfile(p);
-    return p;
-  } catch { return null; }
-};
-
-export interface DailyBonusState { lastClaimDate: string | null; streak: number; }
-
-export const getDailyBonusState = async (): Promise<DailyBonusState> => {
-  try {
-    const raw = await AsyncStorage.getItem(KEYS.DAILY_BONUS);
-    return raw ? JSON.parse(raw) : { lastClaimDate: null, streak: 0 };
-  } catch { return { lastClaimDate: null, streak: 0 }; }
-};
-
-export const claimDailyBonus = async (): Promise<{ tokens: number; streak: number } | null> => {
-  try {
-    const result = await verifiedApi<any>('claim_daily_bonus');
-    if (!result?.ok) return null;
-    await AsyncStorage.setItem(KEYS.DAILY_BONUS, JSON.stringify({
-      lastClaimDate: new Date().toDateString(), streak: Number(result.streak ?? 1),
-    }));
-    const profile = await getProfile();
-    if (profile?.telegramId) await syncProfileFromSupabase(profile.telegramId);
-    return { tokens: Number(result.tokens ?? 0), streak: Number(result.streak ?? 1) };
-  } catch { return null; }
-};
-
-export const getSavedBoard = async (): Promise<any | null> => {
-  try {
-    const raw = await AsyncStorage.getItem(KEYS.SAVED_BOARD);
-    return raw ? JSON.parse(raw) : null;
-  } catch { return null; }
-};
-
-export const saveBoardState = async (state: any): Promise<void> => {
-  try { await AsyncStorage.setItem(KEYS.SAVED_BOARD, JSON.stringify(state)); } catch {}
-};
-export const clearSavedBoard = async (): Promise<void> => {
-  try { await AsyncStorage.removeItem(KEYS.SAVED_BOARD); } catch {}
-};
-
-const mapWithdrawal = (r: any): WithdrawalRequest => ({
-  id: String(r.id), telegramId: String(r.telegram_id), username: String(r.username),
-  amount: Number(r.amount ?? 0), walletAddress: String(r.wallet_address ?? ''),
-  network: String(r.network ?? ''), status: r.status as WithdrawalRequest['status'],
-  createdAt: String(r.created_at), processedAt: r.processed_at ? String(r.processed_at) : undefined,
-  txHash: r.tx_hash ? String(r.tx_hash) : undefined,
-});
-
-export const getWithdrawals = async (telegramId?: string): Promise<WithdrawalRequest[]> => {
-  try {
-    const id = telegramId || (await getProfile())?.telegramId;
-    if (!id) return [];
-    const rows = await verifiedApi<any[]>('get_withdrawals', { telegramId: id });
-    return (rows ?? []).map(mapWithdrawal);
-  } catch { return []; }
-};
-
-export const saveWithdrawal = async (req: WithdrawalRequest): Promise<void> => {
-  await verifiedApi('submit_withdrawal_request', {
-    id: req.id, telegramId: req.telegramId, username: req.username,
-    amount: req.amount, walletAddress: req.walletAddress, network: req.network,
-  });
-};
-
-export const updateWithdrawal = async (_id: string, _updates: Partial<WithdrawalRequest>): Promise<void> => {
-  throw new Error('Player withdrawal status changes are admin-only.');
-};
-
-export const getReferrals = async (referrerTelegramId?: string): Promise<ReferralEntry[]> => {
-  try {
-    const telegramId = referrerTelegramId || (await getProfile())?.telegramId;
-    if (!telegramId) return [];
-    const rows = await verifiedApi<any[]>('get_referrals', { telegramId });
-    return (rows ?? []).map((r: any) => ({
-      code: String(r.referee_telegram_id ?? ''), username: r.players?.username ?? 'Unknown',
-      joinedAt: String(r.created_at), tokensEarned: Number(r.tokens_earned ?? 0),
-      level: Number(r.level ?? 1), refereeBalance: Number(r.players?.total_tokens ?? 0),
-    }));
-  } catch { return []; }
-};
-
-export const addReferral = async (_entry: ReferralEntry): Promise<void> => {};
-export const applyReferralCode = async (code: string): Promise<boolean> => {
-  try {
-    const result = await verifiedApi<any>('apply_referral_code', { code: code.trim().toUpperCase() });
-    return Boolean(result?.ok);
-  } catch { return false; }
-};
-
-export interface LeaderboardEntry { rank: number; telegramId: string; username: string; totalTokens: number; level: number; bestScore: number; }
-export const getLeaderboard = async (limit = 50): Promise<LeaderboardEntry[]> => {
-  try {
-    const rows = await verifiedApi<any[]>('get_leaderboard', { limit });
-    return (rows ?? []).map((row, i) => ({
-      rank: i + 1, telegramId: row.telegram_id, username: row.username,
-      totalTokens: Number(row.total_tokens ?? 0), level: Number(row.level ?? 1), bestScore: Number(row.best_score ?? 0),
-    }));
-  } catch { return []; }
-};
-
-export const getPlayerRank = async (_telegramId: string): Promise<number | null> => {
-  try { return (await verifiedApi<number | null>('get_player_rank')) ?? null; } catch { return null; }
-};
-
-export const subscribeWithdrawalUpdates = (_telegramId: string, _onUpdate: (withdrawal: WithdrawalRequest) => void) => () => {};
+const KEYS={PROFILE:'mintgrow_profile_v4',DAILY_BONUS:'mintgrow_daily_bonus_v2',SAVED_BOARD:'mintgrow_saved_board'};
+export const generateReferralCode=(telegramId:string)=>{const base=telegramId.replace(/\D/g,'').slice(-4)||'0000';return `MG${base}${Math.random().toString(36).substring(2,5).toUpperCase()}`};
+export const createDefaultProfile=(telegramId:string,username:string):PlayerProfile=>({telegramId,username,referralCode:'',referredBy:undefined,referralCount:0,referralTokensEarned:0,totalTokens:0,pendingTokens:0,withdrawnTokens:0,walletAddress:'',level:1,gamesPlayed:0,bestScore:0,adsWatched:0,lastLoginDate:undefined,loginStreak:0,powerUps:{...DEFAULT_POWER_UPS},isRegistered:false});
+const mapRowToProfile=(row:any):PlayerProfile=>({telegramId:String(row.telegram_id),username:row.username??'CryptoPlayer',referralCode:row.referral_code??'',referredBy:row.referred_by??undefined,referralCount:Number(row.direct_referral_count??0),referralTokensEarned:Number(row.referral_tokens_earned??0),totalTokens:Number(row.total_tokens??0),pendingTokens:Number(row.pending_tokens??0),withdrawnTokens:Number(row.withdrawn_tokens??0),walletAddress:row.wallet_address??'',level:Number(row.level??1),gamesPlayed:Number(row.games_played??0),bestScore:Number(row.best_score??0),adsWatched:Number(row.ads_watched??0),lastLoginDate:row.last_login_date??undefined,loginStreak:Number(row.login_streak??0),powerUps:row.power_ups??{...DEFAULT_POWER_UPS},isRegistered:Boolean(row.is_registered)});
+const cacheProfile=async(p:PlayerProfile)=>{await AsyncStorage.setItem(KEYS.PROFILE,JSON.stringify(p))};
+export const getProfile=async()=>{try{const raw=await AsyncStorage.getItem(KEYS.PROFILE);if(!raw)return null;const p=JSON.parse(raw) as PlayerProfile;if(!p.powerUps)p.powerUps={...DEFAULT_POWER_UPS};return p}catch{return null}};
+export const syncProfileFromSupabase=async(telegramId:string)=>{try{const row=await verifiedApi<any>('get_player',{telegramId});if(!row)return null;const p=mapRowToProfile(row);await cacheProfile(p);return p}catch{return null}};
+export const saveProfile=async(profile:PlayerProfile)=>{await cacheProfile(profile);try{const row=await verifiedApi<any>('update_profile_metadata',{telegramId:profile.telegramId,username:profile.username,avatarUrl:profile.avatarUrl,walletAddress:profile.walletAddress});if(row)await cacheProfile(mapRowToProfile(row))}catch(error){console.warn('Profile metadata sync failed:',error instanceof Error?error.message:error)}};
+export const initOrLoadProfile=async(telegramId:string,username:string,avatarUrl?:string)=>{const row=await verifiedApi<any>('ensure_player',{telegramId,username,avatarUrl});const p=mapRowToProfile(row);await cacheProfile(p);return p};
+export const updateProfileTokens=async()=>{throw new Error('Direct client token crediting is disabled; rewards are server-settled.')};
+export interface MiningState{telegramId:string;taps:number;minedTokens:number;miningPower:number;miningLevel:number}
+const mapMining=(r:any):MiningState=>({telegramId:String(r.telegram_id),taps:Number(r.taps??0),minedTokens:Number(r.mined_tokens??0),miningPower:Number(r.mining_power??1),miningLevel:Number(r.mining_level??1)});
+export const getMiningState=async():Promise<MiningState|null>=>{try{const r=await verifiedApi<any>('get_mining_state');return r?mapMining(r):null}catch{return null}};
+export const recordMiningTaps=async(taps=1):Promise<{profile:PlayerProfile;state:MiningState;reward:number}|null>=>{if(!Number.isInteger(taps)||taps<1||taps>100)return null;try{const r=await verifiedApi<any>('record_mining_taps',{taps});if(!r?.profile)return null;const p=mapRowToProfile(r.profile);await cacheProfile(p);return{profile:p,state:mapMining(r.state),reward:Number(r.reward??0)}}catch{return null}};
+export const creditMiningTokens=async(_clientAmount?:number)=>{return (await recordMiningTaps(1))?.profile??null};
+export const upgradeMining=async():Promise<{profile:PlayerProfile;state:MiningState;cost:number}|null>=>{try{const r=await verifiedApi<any>('upgrade_mining');if(!r?.profile)return null;const p=mapRowToProfile(r.profile);await cacheProfile(p);return{profile:p,state:mapMining(r.state),cost:Number(r.cost??0)}}catch{return null}};
+export const incrementAdsWatched=async()=>{};
+export const addPowerUp=async(type:PowerUpType)=>{const current=await getProfile();if(!current)return null;try{const row=await verifiedApi<any>('grant_powerup',{telegramId:current.telegramId,type,clientEventId:`powerup_${current.telegramId}_${type}_${Date.now()}_${Math.random().toString(36).slice(0,8)}`});const p=mapRowToProfile(row);await cacheProfile(p);return p}catch{return null}};
+export const usePowerUp=async(type:PowerUpType)=>{const current=await getProfile();if(!current)return null;try{const row=await verifiedApi<any>('consume_powerup',{telegramId:current.telegramId,type});const p=mapRowToProfile(row);await cacheProfile(p);return p}catch{return null}};
+export const spendTokensForPowerUp=async(type:PowerUpType,cost:number)=>{const current=await getProfile();if(!current)return null;try{const row=await verifiedApi<any>('spend_tokens_for_powerup',{telegramId:current.telegramId,type,cost});const p=mapRowToProfile(row);await cacheProfile(p);return p}catch{return null}};
+export interface DailyBonusState{lastClaimDate:string|null;streak:number}
+export const getDailyBonusState=async():Promise<DailyBonusState>=>{try{const raw=await AsyncStorage.getItem(KEYS.DAILY_BONUS);return raw?JSON.parse(raw):{lastClaimDate:null,streak:0}}catch{return{lastClaimDate:null,streak:0}}};
+export const claimDailyBonus=async()=>{try{const result=await verifiedApi<any>('claim_daily_bonus');if(!result?.ok)return null;await AsyncStorage.setItem(KEYS.DAILY_BONUS,JSON.stringify({lastClaimDate:new Date().toDateString(),streak:Number(result.streak??1)}));const profile=await getProfile();if(profile?.telegramId)await syncProfileFromSupabase(profile.telegramId);return{tokens:Number(result.tokens??0),streak:Number(result.streak??1)}}catch{return null}};
+export const getSavedBoard=async()=>{try{const raw=await AsyncStorage.getItem(KEYS.SAVED_BOARD);return raw?JSON.parse(raw):null}catch{return null}};
+export const saveBoardState=async(state:any)=>{try{await AsyncStorage.setItem(KEYS.SAVED_BOARD,JSON.stringify(state))}catch{}};
+export const clearSavedBoard=async()=>{try{await AsyncStorage.removeItem(KEYS.SAVED_BOARD)}catch{}};
+const mapWithdrawal=(r:any):WithdrawalRequest=>({id:String(r.id),telegramId:String(r.telegram_id),username:String(r.username),amount:Number(r.amount??0),walletAddress:String(r.wallet_address??''),network:String(r.network??''),status:r.status,createdAt:String(r.created_at),processedAt:r.processed_at?String(r.processed_at):undefined,txHash:r.tx_hash?String(r.tx_hash):undefined});
+export const getWithdrawals=async(telegramId?:string)=>{try{const id=telegramId||(await getProfile())?.telegramId;if(!id)return[];return((await verifiedApi<any[]>('get_withdrawals',{telegramId:id}))??[]).map(mapWithdrawal)}catch{return[]}};
+export const saveWithdrawal=async(req:WithdrawalRequest)=>{await verifiedApi('submit_withdrawal_request',{id:req.id,telegramId:req.telegramId,username:req.username,amount:req.amount,walletAddress:req.walletAddress,network:req.network})};
+export const updateWithdrawal=async()=>{throw new Error('Player withdrawal status changes are admin-only.')};
+export const getReferrals=async(referrerTelegramId?:string):Promise<ReferralEntry[]>=>{try{const telegramId=referrerTelegramId||(await getProfile())?.telegramId;if(!telegramId)return[];const rows=await verifiedApi<any[]>('get_referrals',{telegramId});return(rows??[]).map((r:any)=>({code:String(r.referee_telegram_id??''),username:r.players?.username??'Unknown',joinedAt:String(r.created_at),tokensEarned:Number(r.tokens_earned??0),level:Number(r.level??1),refereeBalance:Number(r.players?.total_tokens??0)}))}catch{return[]}};
+export const addReferral=async()=>{};export const applyReferralCode=async(code:string)=>{try{return Boolean((await verifiedApi<any>('apply_referral_code',{code:code.trim().toUpperCase()}))?.ok)}catch{return false}};
+export interface LeaderboardEntry{rank:number;telegramId:string;username:string;totalTokens:number;level:number;bestScore:number}
+export const getLeaderboard=async(limit=50):Promise<LeaderboardEntry[]>=>{try{const rows=await verifiedApi<any[]>('get_leaderboard',{limit});return(rows??[]).map((row,i)=>({rank:i+1,telegramId:row.telegram_id,username:row.username,totalTokens:Number(row.total_tokens??0),level:Number(row.level??1),bestScore:Number(row.best_score??0)}))}catch{return[]}};
+export const getPlayerRank=async()=>{try{return(await verifiedApi<number|null>('get_player_rank'))??null}catch{return null}};
+export interface StakeRequest{id:string;telegramId:string;walletAddress:string;amount:number;network:string;status:string;txHash?:string;submittedAt:string;verifiedAt?:string;broadcastAt?:string;confirmedAt?:string;rejectionReason?:string}
+export const createStakeRequest=async(walletAddress:string,amount:number,network='BNB Chain (BEP-20)')=>{const r=await verifiedApi<any>('create_stake_request',{walletAddress,amount,network});return r as StakeRequest};
+export const getStakeRequests=async():Promise<StakeRequest[]>=>{try{return (await verifiedApi<any[]>('get_stake_requests'))??[]}catch{return[]}};
+export const subscribeWithdrawalUpdates=(_telegramId:string,_onUpdate:(withdrawal:WithdrawalRequest)=>void)=>()=>{};

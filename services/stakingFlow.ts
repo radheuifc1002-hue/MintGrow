@@ -1,0 +1,13 @@
+import { verifiedApi } from '@/services/verifiedApi';
+export type StakingConfig={minimum_stake_mgs:number;minimum_mg_claim:number;staking_delegate_address:string};
+export type StakeRequest={id:string;telegram_id:string;wallet_address:string;amount:number;network:string;status:string;tx_hash?:string;block_number?:number;submitted_at?:string;confirmed_at?:string};
+export type DelegationRequest={id:string;telegram_id:string;owner_wallet:string;delegate_address:string;amount_limit:number;status:string;authorization_tx_hash?:string;expires_at?:string};
+export type StakingClaim={id:string;telegram_id:string;wallet_address:string;amount:number;status:string;tx_hash?:string;block_number?:number;requested_at?:string;confirmed_at?:string};
+export const getStakingConfig=()=>verifiedApi<StakingConfig>('get_staking_config');
+export const getStakeRequests=()=>verifiedApi<StakeRequest[]>('get_stake_requests').then(r=>r??[]);
+export const createStakeRequest=(walletAddress:string,amount:number)=>verifiedApi<StakeRequest>('create_stake_request',{walletAddress,amount,network:'BNB Chain (BEP-20)'});
+export const getDelegationRequests=()=>verifiedApi<DelegationRequest[]>('get_delegation_requests').then(r=>r??[]);
+export const createDelegationRequest=(ownerWallet:string,amountLimit:number,expiresAt?:string)=>verifiedApi<DelegationRequest>('create_delegation_request',{ownerWallet,amountLimit,expiresAt});
+export const recordDelegationAuthorized=(requestId:string,authorizationTxHash:string,expiresAt?:string)=>verifiedApi<DelegationRequest>('record_delegation_authorized',{requestId,authorizationTxHash,expiresAt});
+export const getStakingClaims=()=>verifiedApi<StakingClaim[]>('get_staking_claims').then(r=>r??[]);
+export const createStakingClaim=(walletAddress:string,amount:number)=>verifiedApi<StakingClaim>('create_staking_claim_request',{walletAddress,amount});

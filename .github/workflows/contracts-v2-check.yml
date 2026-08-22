@@ -1,0 +1,43 @@
+name: Contracts V2 Compile & Test
+
+on:
+  push:
+    branches: [backend-flow-hardening-v2]
+    paths:
+      - 'contracts/**'
+      - 'test/**'
+      - 'scripts/**'
+      - 'hardhat.config.js'
+      - 'package.json'
+      - '.github/workflows/contracts-v2-check.yml'
+  pull_request:
+    paths:
+      - 'contracts/**'
+      - 'test/**'
+      - 'scripts/**'
+      - 'hardhat.config.js'
+      - 'package.json'
+      - '.github/workflows/contracts-v2-check.yml'
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Compile contracts
+        run: npm run contracts:compile
+
+      - name: Run contract tests
+        run: npm run contracts:test
