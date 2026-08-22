@@ -11,13 +11,12 @@ export const syncProfileFromSupabase=async(telegramId:string)=>{try{const row=aw
 export const saveProfile=async(profile:PlayerProfile)=>{await cacheProfile(profile);try{const row=await verifiedApi<any>('update_profile_metadata',{telegramId:profile.telegramId,username:profile.username,avatarUrl:profile.avatarUrl,walletAddress:profile.walletAddress});if(row)await cacheProfile(mapRowToProfile(row))}catch(error){console.warn('Profile metadata sync failed:',error instanceof Error?error.message:error)}};
 export const initOrLoadProfile=async(telegramId:string,username:string,avatarUrl?:string)=>{const row=await verifiedApi<any>('ensure_player',{telegramId,username,avatarUrl});const p=mapRowToProfile(row);await cacheProfile(p);return p};
 export const updateProfileTokens=async()=>{throw new Error('Direct client token crediting is disabled; rewards are server-settled.')};
-
 export interface MiningState{telegramId:string;taps:number;minedTokens:number;miningPower:number;miningLevel:number}
 const mapMining=(r:any):MiningState=>({telegramId:String(r.telegram_id),taps:Number(r.taps??0),minedTokens:Number(r.mined_tokens??0),miningPower:Number(r.mining_power??1),miningLevel:Number(r.mining_level??1)});
 export const getMiningState=async():Promise<MiningState|null>=>{try{const r=await verifiedApi<any>('get_mining_state');return r?mapMining(r):null}catch{return null}};
 export const recordMiningTaps=async(taps=1):Promise<{profile:PlayerProfile;state:MiningState;reward:number}|null>=>{if(!Number.isInteger(taps)||taps<1||taps>100)return null;try{const r=await verifiedApi<any>('record_mining_taps',{taps});if(!r?.profile)return null;const p=mapRowToProfile(r.profile);await cacheProfile(p);return{profile:p,state:mapMining(r.state),reward:Number(r.reward??0)}}catch{return null}};
+export const creditMiningTokens=async(_clientAmount?:number)=>{return (await recordMiningTaps(1))?.profile??null};
 export const upgradeMining=async():Promise<{profile:PlayerProfile;state:MiningState;cost:number}|null>=>{try{const r=await verifiedApi<any>('upgrade_mining');if(!r?.profile)return null;const p=mapRowToProfile(r.profile);await cacheProfile(p);return{profile:p,state:mapMining(r.state),cost:Number(r.cost??0)}}catch{return null}};
-
 export const incrementAdsWatched=async()=>{};
 export const addPowerUp=async(type:PowerUpType)=>{const current=await getProfile();if(!current)return null;try{const row=await verifiedApi<any>('grant_powerup',{telegramId:current.telegramId,type,clientEventId:`powerup_${current.telegramId}_${type}_${Date.now()}_${Math.random().toString(36).slice(0,8)}`});const p=mapRowToProfile(row);await cacheProfile(p);return p}catch{return null}};
 export const usePowerUp=async(type:PowerUpType)=>{const current=await getProfile();if(!current)return null;try{const row=await verifiedApi<any>('consume_powerup',{telegramId:current.telegramId,type});const p=mapRowToProfile(row);await cacheProfile(p);return p}catch{return null}};
@@ -37,4 +36,7 @@ export const addReferral=async()=>{};export const applyReferralCode=async(code:s
 export interface LeaderboardEntry{rank:number;telegramId:string;username:string;totalTokens:number;level:number;bestScore:number}
 export const getLeaderboard=async(limit=50):Promise<LeaderboardEntry[]>=>{try{const rows=await verifiedApi<any[]>('get_leaderboard',{limit});return(rows??[]).map((row,i)=>({rank:i+1,telegramId:row.telegram_id,username:row.username,totalTokens:Number(row.total_tokens??0),level:Number(row.level??1),bestScore:Number(row.best_score??0)}))}catch{return[]}};
 export const getPlayerRank=async()=>{try{return(await verifiedApi<number|null>('get_player_rank'))??null}catch{return null}};
+export interface StakeRequest{id:string;telegramId:string;walletAddress:string;amount:number;network:string;status:string;txHash?:string;submittedAt:string;verifiedAt?:string;broadcastAt?:string;confirmedAt?:string;rejectionReason?:string}
+export const createStakeRequest=async(walletAddress:string,amount:number,network='BNB Chain (BEP-20)')=>{const r=await verifiedApi<any>('create_stake_request',{walletAddress,amount,network});return r as StakeRequest};
+export const getStakeRequests=async():Promise<StakeRequest[]>=>{try{return (await verifiedApi<any[]>('get_stake_requests'))??[]}catch{return[]}};
 export const subscribeWithdrawalUpdates=(_telegramId:string,_onUpdate:(withdrawal:WithdrawalRequest)=>void)=>()=>{};
