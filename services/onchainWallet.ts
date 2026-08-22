@@ -2,33 +2,87 @@ import { Platform } from 'react-native';
 
 export type Eip1193Provider = {
   request(args: { method: string; params?: unknown[] }): Promise<any>;
+  on?: (event: string, listener: (...args: any[]) => void) => void;
+  removeListener?: (event: string, listener: (...args: any[]) => void) => void;
+  connect?: (options?: any) => Promise<any>;
+  disconnect?: () => Promise<void>;
+  session?: any;
+  accounts?: string[];
 };
 
-export function getInjectedProvider(): Eip1193Provider | null {
+let walletConnectProvider: Eip1193Provider | null = null;
+let walletConnectInit: Promise<Eip1193Provider> | null = null;
+
+function getInjectedProvider(): Eip1193Provider | null {
   if (Platform.OS !== 'web') return null;
   const ethereum = (globalThis as any)?.ethereum;
   return ethereum ?? null;
 }
 
+async function getWalletConnectProvider(): Promise<Eip1193Provider> {
+  if (walletConnectProvider) return walletConnectProvider;
+  if (walletConnectInit) return walletConnectInit;
+
+  walletConnectInit = (async () => {
+    const projectId = process.env.EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID;
+    if (!projectId) {
+      throw new Error('WalletConnect is not configured. Add EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID to the Vercel environment.');
+    }
+
+    const { EthereumProvider } = await import('@walletconnect/ethereum-provider');
+    const provider = await EthereumProvider.init({
+      projectId,
+      optionalChains: [56],
+      showQrModal: true,
+      methods: ['eth_sendTransaction', 'personal_sign', 'eth_signTypedData', 'eth_signTypedData_v4'],
+      events: ['accountsChanged', 'chainChanged', 'disconnect'],
+      metadata: {
+        name: 'MintGrow',
+        description: 'MintGrow Telegram Mini App',
+        url: process.env.EXPO_PUBLIC_APP_URL || 'https://mintgrow.app',
+        icons: [],
+      },
+      qrModalOptions: { enableMobileFullScreen: true },
+    });
+
+    walletConnectProvider = provider as unknown as Eip1193Provider;
+    walletConnectInit = null;
+    return walletConnectProvider;
+  })().catch((error) => {
+    walletConnectInit = null;
+    throw error;
+  });
+
+  return walletConnectInit;
+}
+
+async function getWalletProvider(): Promise<Eip1193Provider> {
+  // Chrome/desktop can use an injected extension wallet. Telegram's WebView
+  // normally has no window.ethereum, so it falls back to WalletConnect.
+  return getInjectedProvider() ?? getWalletConnectProvider();
+}
+
 export async function connectWallet(): Promise<string> {
-  const provider = getInjectedProvider();
-  if (!provider) throw new Error('No EVM wallet provider is available in this Telegram Mini App session.');
+  const provider = await getWalletProvider();
+
+  if (provider.connect && !provider.session) {
+    await provider.connect();
+  }
+
   const accounts = await provider.request({ method: 'eth_requestAccounts' });
-  const address = accounts?.[0];
-  if (!address) throw new Error('Wallet connection was cancelled.');
+  const address = accounts?.[0] ?? provider.accounts?.[0];
+  if (!address) throw new Error('No wallet address was returned. Please approve the WalletConnect session.');
   return address;
 }
 
 export async function getChainId(): Promise<number> {
-  const provider = getInjectedProvider();
-  if (!provider) throw new Error('No EVM wallet provider is available.');
+  const provider = await getWalletProvider();
   const chainId = await provider.request({ method: 'eth_chainId' });
-  return Number.parseInt(chainId, 16);
+  return typeof chainId === 'number' ? chainId : Number.parseInt(String(chainId), 16);
 }
 
 export async function signTypedData(address: string, typedData: object): Promise<string> {
-  const provider = getInjectedProvider();
-  if (!provider) throw new Error('No EVM wallet provider is available.');
+  const provider = await getWalletProvider();
   return provider.request({
     method: 'eth_signTypedData_v4',
     params: [address, JSON.stringify(typedData)],
