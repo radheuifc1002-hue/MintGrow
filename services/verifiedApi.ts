@@ -3,7 +3,8 @@ import { supabase } from '@/services/supabase';
 export type VerifiedApiAction =
   | 'get_player' | 'ensure_player' | 'ensure_referral_code' | 'complete_registration'
   | 'update_profile_metadata' | 'credit_player_tokens' | 'record_ad_event'
-  | 'record_game_session' | 'apply_referral_code' | 'submit_withdrawal_request'
+  | 'record_game_session' | 'start_game_session' | 'settle_game_session'
+  | 'apply_referral_code' | 'submit_withdrawal_request'
   | 'get_referrals' | 'get_withdrawals' | 'get_leaderboard' | 'get_player_rank'
   | 'claim_daily_bonus' | 'spend_tokens_for_powerup' | 'grant_powerup' | 'consume_powerup';
 
@@ -37,9 +38,7 @@ const readFunctionError = async (error: any): Promise<string> => {
         if (text) return text.slice(0, 500);
       }
     }
-  } catch {
-    // Fall back to the SDK error message below.
-  }
+  } catch {}
   return String(error?.message || 'MintGrow API request failed');
 };
 
