@@ -1,13 +1,87 @@
-import { verifiedApi } from '@/services/verifiedApi';
-export type StakingConfig={minimum_stake_mgs:number;minimum_mg_claim:number;staking_delegate_address:string};
-export type StakeRequest={id:string;telegram_id:string;wallet_address:string;amount:number;network:string;status:string;tx_hash?:string;block_number?:number;submitted_at?:string;confirmed_at?:string};
-export type DelegationRequest={id:string;telegram_id:string;owner_wallet:string;delegate_address:string;amount_limit:number;status:string;authorization_tx_hash?:string;expires_at?:string};
-export type StakingClaim={id:string;telegram_id:string;wallet_address:string;amount:number;status:string;tx_hash?:string;block_number?:number;requested_at?:string;confirmed_at?:string};
-export const getStakingConfig=()=>verifiedApi<StakingConfig>('get_staking_config');
-export const getStakeRequests=()=>verifiedApi<StakeRequest[]>('get_stake_requests').then(r=>r??[]);
-export const createStakeRequest=(walletAddress:string,amount:number)=>verifiedApi<StakeRequest>('create_stake_request',{walletAddress,amount,network:'BNB Chain (BEP-20)'});
-export const getDelegationRequests=()=>verifiedApi<DelegationRequest[]>('get_delegation_requests').then(r=>r??[]);
-export const createDelegationRequest=(ownerWallet:string,amountLimit:number,expiresAt?:string)=>verifiedApi<DelegationRequest>('create_delegation_request',{ownerWallet,amountLimit,expiresAt});
-export const recordDelegationAuthorized=(requestId:string,authorizationTxHash:string,expiresAt?:string)=>verifiedApi<DelegationRequest>('record_delegation_authorized',{requestId,authorizationTxHash,expiresAt});
-export const getStakingClaims=()=>verifiedApi<StakingClaim[]>('get_staking_claims').then(r=>r??[]);
-export const createStakingClaim=(walletAddress:string,amount:number)=>verifiedApi<StakingClaim>('create_staking_claim_request',{walletAddress,amount});
+// Staking reward claim flow service.
+// Manages staking configuration and MG reward claim requests that are
+// processed through the on-chain staking contract settlement path.
+
+import { getSupabaseClient } from '@/services/supabase';
+import { getProfile } from '@/services/storage';
+
+export interface StakingConfig {
+  minimum_stake_mgs: number;
+  minimum_mg_claim: number;
+  staking_delegate_address: string;
+}
+
+export interface StakingClaim {
+  id: string;
+  telegram_id: string;
+  wallet_address: string;
+  amount: number;
+  status: 'queued' | 'processing' | 'completed' | 'failed';
+  tx_hash?: string | null;
+  created_at: string;
+}
+
+const DEFAULT_CONFIG: StakingConfig = {
+  minimum_stake_mgs: 250000,
+  minimum_mg_claim: 25000,
+  staking_delegate_address: '',
+};
+
+export async function getStakingConfig(): Promise<StakingConfig> {
+  try {
+    const supabase = getSupabaseClient();
+    const { data, error } = await supabase
+      .from('staking_config')
+      .select('*')
+      .single();
+    if (error || !data) return DEFAULT_CONFIG;
+    return {
+      minimum_stake_mgs: Number(data.minimum_stake_mgs ?? DEFAULT_CONFIG.minimum_stake_mgs),
+      minimum_mg_claim: Number(data.minimum_mg_claim ?? DEFAULT_CONFIG.minimum_mg_claim),
+      staking_delegate_address: data.staking_delegate_address ?? '',
+    };
+  } catch {
+    return DEFAULT_CONFIG;
+  }
+}
+
+export async function getStakingClaims(): Promise<StakingClaim[]> {
+  try {
+    const profile = await getProfile();
+    if (!profile?.telegramId) return [];
+    const supabase = getSupabaseClient();
+    const { data, error } = await supabase
+      .from('staking_claims')
+      .select('*')
+      .eq('telegram_id', profile.telegramId)
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (error || !data) return [];
+    return data as StakingClaim[];
+  } catch {
+    return [];
+  }
+}
+
+export async function createStakingClaim(
+  walletAddress: string,
+  amount: number,
+): Promise<StakingClaim> {
+  const profile = await getProfile();
+  if (!profile?.telegramId) throw new Error('Player profile not found.');
+
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from('staking_claims')
+    .insert({
+      telegram_id: profile.telegramId,
+      wallet_address: walletAddress.trim().toLowerCase(),
+      amount,
+      status: 'queued',
+    })
+    .select()
+    .single();
+
+  if (error) throw new Error(error.message || 'Failed to create staking claim.');
+  return data as StakingClaim;
+}

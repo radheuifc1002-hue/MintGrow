@@ -6,16 +6,19 @@ import { Image } from 'expo-image';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useGame } from '@/hooks/useGame';
 import { Colors, Spacing, Radius, Typography } from '@/constants/theme';
-import { LEVEL_REWARDS, TOKEN_NETWORK } from '@/types/game';
+import { LEVEL_REWARDS, TOKEN_NETWORK, WITHDRAWAL_MIN } from '@/types/game';
 import { TokenBadge } from '@/components/ui/TokenBadge';
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const { profile, level } = useGame();
   const router = useRouter();
+
   const currentReward = LEVEL_REWARDS.find(r => r.level === level);
 
-  const handleAdminAccess = () => router.push('/admin-panel' as any);
+  const handleAdminAccess = () => {
+    router.push('/admin-panel' as any);
+  };
 
   const stats = [
     { label: 'Games Played', value: profile?.gamesPlayed ?? 0, icon: 'games' },
@@ -91,7 +94,7 @@ export default function ProfileScreen() {
           <Text style={styles.tokenTitle}>About MintGrow (MG)</Text>
           <Text style={styles.tokenBody}>
             MG is a utility token on BNB Chain (BEP-20). Earn by merging coins, completing daily streaks, and referring friends.
-            Accumulated MG rewards are claimable through the staking contract after a successful stake. MGS principal is never withdrawn through this frontend.
+            Min withdrawal: {WITHDRAWAL_MIN.toLocaleString()} MG. Token powers governance, NFT mints, DAO membership, and DeFi yields.
           </Text>
           <View style={styles.networkTag}><Text style={styles.networkTagText}>{TOKEN_NETWORK}</Text></View>
         </View>
@@ -108,21 +111,45 @@ export default function ProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.bg }, scroll: { padding: Spacing.md, paddingBottom: 40, alignItems: 'center' },
-  avatarSection: { alignItems: 'center', marginBottom: Spacing.lg, gap: Spacing.sm }, logoImg: { width: 72, height: 72, borderRadius: 16 },
-  username: { ...Typography.h2, color: Colors.textPrimary }, telegramId: { ...Typography.small, color: Colors.textMuted },
+  container: { flex: 1, backgroundColor: Colors.bg },
+  scroll: { padding: Spacing.md, paddingBottom: 40, alignItems: 'center' },
+  avatarSection: { alignItems: 'center', marginBottom: Spacing.lg, gap: Spacing.sm },
+  logoImg: { width: 72, height: 72, borderRadius: 16 },
+  username: { ...Typography.h2, color: Colors.textPrimary },
+  telegramId: { ...Typography.small, color: Colors.textMuted },
   levelCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: Colors.bgCard, borderRadius: Radius.lg, padding: Spacing.md, width: '100%', borderWidth: 2, borderColor: Colors.primary, marginBottom: Spacing.md },
-  levelLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md }, levelCircle: { width: 48, height: 48, borderRadius: 24, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center' },
-  levelNum: { fontSize: 22, fontWeight: '800', color: '#fff' }, levelTitle: { ...Typography.bodyBold, color: Colors.textPrimary }, levelSub: { ...Typography.caption, color: Colors.textMuted },
+  levelLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+  levelCircle: { width: 48, height: 48, borderRadius: 24, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center' },
+  levelNum: { fontSize: 22, fontWeight: '800', color: '#fff' },
+  levelTitle: { ...Typography.bodyBold, color: Colors.textPrimary },
+  levelSub: { ...Typography.caption, color: Colors.textMuted },
   referralCard: { backgroundColor: Colors.primaryGlow, borderRadius: Radius.lg, padding: Spacing.md, width: '100%', marginBottom: Spacing.md, borderWidth: 1, borderColor: Colors.primary, alignItems: 'center', gap: 4 },
-  referralLabel: { ...Typography.caption, color: Colors.primary, letterSpacing: 1, textTransform: 'uppercase' }, referralCode: { fontSize: 22, fontWeight: '900', color: Colors.primary, letterSpacing: 3 }, referralSub: { ...Typography.small, color: Colors.primaryDark },
-  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, width: '100%', marginBottom: Spacing.md }, statCard: { flex: 1, minWidth: '45%', backgroundColor: Colors.bgCard, borderRadius: Radius.md, padding: Spacing.md, alignItems: 'center', borderWidth: 1, borderColor: Colors.border },
-  statIcon: { marginBottom: 4 }, statVal: { ...Typography.h3, color: Colors.textPrimary }, statLbl: { ...Typography.caption, color: Colors.textMuted, textAlign: 'center' },
-  stakingCard: { backgroundColor: Colors.primary, borderRadius: Radius.lg, padding: Spacing.md, width: '100%', marginBottom: Spacing.md }, stakingCopy: { marginBottom: Spacing.md },
-  stakingKicker: { ...Typography.caption, color: Colors.textOnGreen, letterSpacing: 1.5 }, stakingTitle: { ...Typography.h3, color: Colors.textOnGreen, marginTop: 2 }, stakingBody: { ...Typography.small, color: 'rgba(255,255,255,0.84)', lineHeight: 19, marginTop: 4 },
-  stakingBtn: { minHeight: 46, backgroundColor: '#FFFFFF', borderRadius: Radius.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 }, stakingBtnText: { ...Typography.bodyBold, color: Colors.primary },
-  walletCard: { backgroundColor: Colors.bgCard, borderRadius: Radius.md, padding: Spacing.md, width: '100%', marginBottom: Spacing.md, borderWidth: 1, borderColor: Colors.border, gap: Spacing.xs }, walletRow: { flexDirection: 'row', alignItems: 'center', gap: 6 }, walletTitle: { ...Typography.bodyBold, color: Colors.textPrimary }, walletAddr: { ...Typography.small, color: Colors.primary, fontFamily: 'monospace' }, walletEmpty: { ...Typography.small, color: Colors.textMuted },
-  tokenCard: { backgroundColor: Colors.bgCard, borderRadius: Radius.md, padding: Spacing.md, width: '100%', marginBottom: Spacing.md, borderWidth: 1, borderColor: Colors.border, gap: 8 }, tokenTitle: { ...Typography.bodyBold, color: Colors.primary }, tokenBody: { ...Typography.small, color: Colors.textSecondary, lineHeight: 20 },
-  networkTag: { backgroundColor: Colors.primaryGlow, borderRadius: Radius.full, paddingVertical: 4, paddingHorizontal: 12, alignSelf: 'flex-start', borderWidth: 1, borderColor: Colors.primary }, networkTagText: { ...Typography.caption, color: Colors.primary, fontWeight: '700' },
-  adminBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: Spacing.sm, paddingHorizontal: Spacing.md, borderRadius: Radius.full, borderWidth: 1, borderColor: Colors.border, marginBottom: Spacing.sm }, adminBtnText: { ...Typography.small, color: Colors.textMuted }, footer: { ...Typography.caption, color: Colors.textMuted, textAlign: 'center', marginTop: Spacing.sm },
+  referralLabel: { ...Typography.caption, color: Colors.primary, letterSpacing: 1, textTransform: 'uppercase' },
+  referralCode: { fontSize: 22, fontWeight: '900', color: Colors.primary, letterSpacing: 3 },
+  referralSub: { ...Typography.small, color: Colors.primaryDark },
+  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, width: '100%', marginBottom: Spacing.md },
+  statCard: { flex: 1, minWidth: '45%', backgroundColor: Colors.bgCard, borderRadius: Radius.md, padding: Spacing.md, alignItems: 'center', borderWidth: 1, borderColor: Colors.border },
+  statIcon: { marginBottom: 4 },
+  statVal: { ...Typography.h3, color: Colors.textPrimary },
+  statLbl: { ...Typography.caption, color: Colors.textMuted, textAlign: 'center' },
+  stakingCard: { backgroundColor: Colors.primary, borderRadius: Radius.lg, padding: Spacing.md, width: '100%', marginBottom: Spacing.md },
+  stakingCopy: { marginBottom: Spacing.md },
+  stakingKicker: { ...Typography.caption, color: Colors.textOnGreen, letterSpacing: 1.5 },
+  stakingTitle: { ...Typography.h3, color: Colors.textOnGreen, marginTop: 2 },
+  stakingBody: { ...Typography.small, color: 'rgba(255,255,255,0.84)', lineHeight: 19, marginTop: 4 },
+  stakingBtn: { minHeight: 46, backgroundColor: '#FFFFFF', borderRadius: Radius.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  stakingBtnText: { ...Typography.bodyBold, color: Colors.primary },
+  walletCard: { backgroundColor: Colors.bgCard, borderRadius: Radius.md, padding: Spacing.md, width: '100%', marginBottom: Spacing.md, borderWidth: 1, borderColor: Colors.border, gap: Spacing.xs },
+  walletRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  walletTitle: { ...Typography.bodyBold, color: Colors.textPrimary },
+  walletAddr: { ...Typography.small, color: Colors.primary, fontFamily: 'monospace' },
+  walletEmpty: { ...Typography.small, color: Colors.textMuted },
+  tokenCard: { backgroundColor: Colors.bgCard, borderRadius: Radius.md, padding: Spacing.md, width: '100%', marginBottom: Spacing.md, borderWidth: 1, borderColor: Colors.border, gap: 8 },
+  tokenTitle: { ...Typography.bodyBold, color: Colors.primary },
+  tokenBody: { ...Typography.small, color: Colors.textSecondary, lineHeight: 20 },
+  networkTag: { backgroundColor: Colors.primaryGlow, borderRadius: Radius.full, paddingVertical: 4, paddingHorizontal: 12, alignSelf: 'flex-start', borderWidth: 1, borderColor: Colors.primary },
+  networkTagText: { ...Typography.caption, color: Colors.primary, fontWeight: '700' },
+  adminBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: Spacing.sm, paddingHorizontal: Spacing.md, borderRadius: Radius.full, borderWidth: 1, borderColor: Colors.border, marginBottom: Spacing.sm },
+  adminBtnText: { ...Typography.small, color: Colors.textMuted },
+  footer: { ...Typography.caption, color: Colors.textMuted, textAlign: 'center', marginTop: Spacing.sm },
 });
