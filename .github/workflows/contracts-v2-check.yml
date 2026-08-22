@@ -2,7 +2,7 @@ name: Contracts V2 Compile & Test
 
 on:
   push:
-    branches: [backend-flow-hardening-v2]
+    branches: [main, backend-flow-hardening-v2]
     paths:
       - 'contracts/**'
       - 'test/**'
@@ -34,7 +34,7 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        run: npm install --legacy-peer-deps --no-audit --no-fund
 
       - name: Compile contracts
         run: npm run contracts:compile
