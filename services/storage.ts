@@ -4,9 +4,8 @@ import { verifiedApi } from '@/services/verifiedApi';
 
 const KEYS = { PROFILE: 'mintgrow_profile_v4', DAILY_BONUS: 'mintgrow_daily_bonus_v2', SAVED_BOARD: 'mintgrow_saved_board' };
 
-// Token credits are serialized so rapid merges cannot race each other or
-// overwrite a newer server balance with an older cached response.
 let tokenCreditQueue: Promise<unknown> = Promise.resolve();
+let miningCreditQueue: Promise<unknown> = Promise.resolve();
 
 export const generateReferralCode = (telegramId: string): string => {
   const base = telegramId.replace(/\D/g, '').slice(-4) || '0000';
@@ -38,9 +37,6 @@ const cacheProfile = async (profile: PlayerProfile) => {
   await AsyncStorage.setItem(KEYS.PROFILE, JSON.stringify(profile));
 };
 
-// Cache reads are now side-effect free. Previously this method started a
-// background server sync, which could finish after a token credit and restore
-// an older balance into AsyncStorage.
 export const getProfile = async (): Promise<PlayerProfile | null> => {
   try {
     const raw = await AsyncStorage.getItem(KEYS.PROFILE);
@@ -109,14 +105,43 @@ export const updateProfileTokens = async (tokens: number, score: number): Promis
       return p;
     } catch (error) {
       console.warn('Token credit failed:', error instanceof Error ? error.message : error);
-      // Do not fabricate a new balance. The caller can explicitly refresh from
-      // Supabase and keep the last known authoritative profile.
       return null;
     }
   };
 
   const result = tokenCreditQueue.then(operation, operation);
   tokenCreditQueue = result.catch(() => undefined);
+  return result;
+};
+
+// Mining credits use the same authoritative server-side wallet operation as
+// merge rewards, but preserve the player's existing score/level metadata.
+// Requests are serialized so rapid taps cannot overwrite a newer balance.
+export const creditMiningTokens = async (amount: number): Promise<PlayerProfile | null> => {
+  if (!Number.isFinite(amount) || amount <= 0) return getProfile();
+
+  const operation = async (): Promise<PlayerProfile | null> => {
+    const current = await getProfile();
+    if (!current) return null;
+
+    try {
+      const row = await verifiedApi<any>('credit_player_tokens', {
+        telegramId: current.telegramId,
+        amount,
+        bestScore: Number(current.bestScore ?? 0),
+        level: Math.max(1, Number(current.level ?? 1)),
+      });
+      const p = mapRowToProfile(row);
+      await cacheProfile(p);
+      return p;
+    } catch (error) {
+      console.warn('Mining token credit failed:', error instanceof Error ? error.message : error);
+      return null;
+    }
+  };
+
+  const result = miningCreditQueue.then(operation, operation);
+  miningCreditQueue = result.catch(() => undefined);
   return result;
 };
 
